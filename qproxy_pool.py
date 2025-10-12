@@ -34,6 +34,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # --- External library from the Git repo ---
+import sys
+sys.path.insert(0, './terminal-api-for-qcli')
 from api import TerminalAPIClient
 from api.data_structures import TerminalType
 
@@ -530,7 +532,13 @@ async def _startup():
     SOP_DIR.mkdir(parents=True, exist_ok=True)
     TASK_DOC = _read_task_doc(TASK_DOC_BUDGET)
     asyncio.create_task(pool.start())
-    await pool.wait_ready(10.0)
+    try:
+        await pool.wait_ready(30.0)  # 增加超时时间到30秒
+        print("Pool initialized successfully")
+    except asyncio.TimeoutError:
+        print("Warning: Pool initialization timeout, but continuing...")
+    except Exception as e:
+        print(f"Warning: Pool initialization error: {e}, but continuing...")
 
 @app.get("/healthz")
 async def healthz():
