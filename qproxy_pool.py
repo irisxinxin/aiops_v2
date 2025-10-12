@@ -1,25 +1,24 @@
-# qproxy_pool.py
+# qproxy_longpool_final.py
 # -*- coding: utf-8 -*-
 """
-Q Proxy (Python) with a warmed WebSocket connection pool to Amazon Q CLI via ttyd.
+Q Proxy (Python) — Long‑lived WebSocket pool using aleck31/terminal-api-for-qcli
 
-- Uses TerminalAPIClient from aleck31/terminal-api-for-qcli (the Git repo you referenced)
-- Pre-warms a pool of long-lived WS connections (reduces MCP-loading latency)
-- HTTP POST /call will borrow a hot connection and interact with Q
-- Before each interaction:
-    * If conversations/<sop_id>.qconv exists -> send `/load <file>`
-- After each interaction:
-    * If the output looks valid -> send `/compact` then `/save <file>`
-- Prompt building:
-    * Always include task_instructions.md
-    * Insert the matched SOP (by sop_id derived from alert) from sdn5_sop_full.jsonl (or SOP_DIR/ files)
-    * Include the full input alert JSON
-- A local test helper will read ./sdn5_cpu.json and POST it to /call
+Highlights
+- Uses TerminalAPIClient from the Git repo to establish and keep N long-lived WS connections.
+- HTTP POST /call borrows one connection, interacts with Q, and then returns it to the pool.
+- Before ask: if conversations/<sop_id>.qconv exists, run `/load <file>`.
+- After ask: if output looks valid JSON (with required keys), run `/compact` then `/save <file>`.
+- Prompt always includes task_instructions.md and a SOP (resolved by sop_id derived from alert).
+- For SOP: first check files in SOP_DIR/<sop_id>.{md,txt,json>, else scan a jsonl (e.g. sdn5_sop_full.jsonl).
+- A convenience /test endpoint (and RUN_TEST_ON_START=1) uses /mnt/data/sdn5_cpu.json to exercise /call.
+
+Pre-req:
+    pip install fastapi uvicorn "git+https://github.com/aleck31/terminal-api-for-qcli@master"
+Ensure QCLI via ttyd is running, e.g.:
+    ttyd --ping-interval 25 -p 7682 q
 
 Run:
-    pip install fastapi uvicorn "git+https://github.com/aleck31/terminal-api-for-qcli@master"
-    # Ensure ttyd+Q is up, e.g.: ttyd --ping-interval 25 -p 7682 q
-    python qproxy_pool.py
+    python qproxy_longpool_final.py
 """
 
 import os
@@ -34,8 +33,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# --- External library from your Git repo ---
-# pip install "git+https://github.com/aleck31/terminal-api-for-qcli@master"
+# --- External library from the Git repo ---
 from api import TerminalAPIClient
 from api.data_structures import TerminalType
 
@@ -53,10 +51,11 @@ READY_NEED = int(os.getenv("READY_NEED", "1"))
 
 CONV_DIR = Path(os.getenv("CONV_DIR", "./conversations")).resolve()
 SOP_DIR = Path(os.getenv("SOP_DIR", "./sop")).resolve()
-SOP_JSONL_DIR = Path(os.getenv("SOP_JSONL_DIR", "./sop")).resolve()
+
+SOP_JSONL_DIR = Path(os.getenv("SOP_JSONL_DIR", "/mnt/data")).resolve()
 SOP_JSONL_FILE = os.getenv("SOP_JSONL_FILE", "sdn5_sop_full.jsonl")
 
-TASK_INSTR_PATH = Path(os.getenv("TASK_INSTR_PATH", "./task_instructions.md")).resolve()
+TASK_INSTR_PATH = Path(os.getenv("TASK_INSTR_PATH", "/mnt/data/task_instructions.md")).resolve()
 TASK_DOC_BUDGET = int(os.getenv("QPROXY_TASK_DOC_BUDGET", "2048"))
 ALERT_JSON_PRETTY = os.getenv("QPROXY_ALERT_JSON_PRETTY", "0") == "1"
 
@@ -74,7 +73,9 @@ CTRL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')  # keep \t \n \r
 TUI_PREFIX = re.compile(r'(?m)^(>|!>|\s*\x1b\[0m)+\s*')
 SPINNER = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s*Thinking\.\.\.')
 
-REQUIRED_TOP_LEVEL_KEYS = {"tool_calls", "root_cause", "evidence", "confidence", "suggested_actions", "analysis_summary"}
+REQUIRED_TOP_LEVEL_KEYS = {
+    "tool_calls", "root_cause", "evidence", "confidence", "suggested_actions", "analysis_summary"
+}
 
 def clean_text(s: str) -> str:
     s = CSI.sub("", s)
@@ -87,12 +88,13 @@ def clean_text(s: str) -> str:
         s = s.replace("\n\n\n", "\n\n")
     return s.strip()
 
+def strip_code_fences(s: str) -> str:
+    return re.sub(r"^```(?:json)?\s*|\s*```$", "", s, flags=re.I | re.M)
+
 def try_extract_json_payload(s: str) -> Optional[Dict[str, Any]]:
-    """Try to extract a JSON object from a string that may contain extra text/code fences."""
-    s = clean_text(s)
-    # strip code fences
-    s = re.sub(r"^```(?:json)?\s*|\s*```$", "", s, flags=re.I | re.M)
-    # find first {...} block
+    """Extract a JSON object from text that may contain ANSI, fences or headers."""
+    s = strip_code_fences(clean_text(s))
+    # Try the largest {...} block
     start = s.find("{")
     end = s.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -101,7 +103,6 @@ def try_extract_json_payload(s: str) -> Optional[Dict[str, Any]]:
             return json.loads(candidate)
         except Exception:
             pass
-    # last resort: whole string
     try:
         return json.loads(s)
     except Exception:
@@ -123,6 +124,12 @@ class SopLine(BaseModel):
     incident_key: Optional[str] = None
     keys: Optional[List[str]] = None
     priority: Optional[str] = None  # HIGH/MIDDLE/LOW
+    # Accept both capitalized and lower-case field names
+    Command: Optional[List[str]] = None
+    Metric: Optional[List[str]] = None
+    Log: Optional[List[str]] = None
+    Parameter: Optional[List[str]] = None
+    FixAction: Optional[List[str]] = None
     command: Optional[List[str]] = None
     metric: Optional[List[str]] = None
     log: Optional[List[str]] = None
@@ -170,13 +177,11 @@ def _wildcard_match(patt: str, val: str) -> bool:
         return True
     if "*" not in patt:
         return patt == val
-    # convert * -> regex
     import re as _re
     re_str = "^" + _re.escape(patt).replace("\\*", ".*") + "$"
     return _re.compile(re_str).match(val) is not None
 
 def _key_matches(keys: List[str], a: Dict[str, Any]) -> bool:
-    """keys like: svc:omada cat:cpu sev:critical region:aps1 (supports * wildcard)"""
     if not keys:
         return False
     matches = 0
@@ -185,7 +190,6 @@ def _key_matches(keys: List[str], a: Dict[str, Any]) -> bool:
         if ":" not in k:
             continue
         field, patt = k.split(":", 1)
-        # map fields out of alert
         v = ""
         if field in ("svc", "service"):
             v = str(_dig(a, "service") or "")
@@ -196,7 +200,6 @@ def _key_matches(keys: List[str], a: Dict[str, Any]) -> bool:
         elif field == "region":
             v = str(_dig(a, "region") or "")
         else:
-            # unsupported field -> skip entire rule
             return False
         if _wildcard_match(patt, v):
             matches += 1
@@ -204,54 +207,41 @@ def _key_matches(keys: List[str], a: Dict[str, Any]) -> bool:
             return False
     return matches > 0
 
-def _join_section(title: str, items: Optional[List[str]], limit: int) -> str:
-    items = items or []
+def _pick_items(line: SopLine, name_cap: str, name_low: str, limit: int) -> str:
+    items = getattr(line, name_cap) or getattr(line, name_low) or []
     out: List[str] = []
     for i, v in enumerate(items):
         if isinstance(v, str) and v.strip():
-            out.append(f"- {title}: {v.strip()}")
+            out.append(f"- {name_cap}: {v.strip()}")
         if limit and (i + 1) >= limit:
             break
     return "\n".join(out)
 
-def build_sop_context_with_id(alert: Dict[str, Any], sop_dir: Path) -> Tuple[str, str]:
-    """
-    Implements the Go logic:
-      - Compute incident_key (normalized composite)
-      - sop_id = 'sop_' + sha1(incident_key)[:12]
-      - Load SOP jsonl; first prefer exact sop_id; fallback to incident_key; then keys-matching
-      - Return pretty SOP text + final sop_id
-    """
-    if not str(sop_dir).strip():
-        return "", ""
-
-    incident_key = build_incident_key(alert)
-    sop_id = "sop_" + hashlib.sha1(incident_key.encode("utf-8")).hexdigest()[:12]
-
-    # 1) Try from loose files in SOP_DIR (sop_id.md/txt/json)
+def build_sop_context_from_files(sop_id: str) -> str:
+    """Prefer SOP_DIR files if present: <sop_id>.md/txt/json."""
+    if not sop_id:
+        return ""
     for ext in (".md", ".txt", ".json"):
-        fp = sop_dir / f"{sop_id}{ext}"
-        if fp.exists():
+        p = SOP_DIR / f"{sop_id}{ext}"
+        if p.exists():
             try:
-                return fp.read_text(encoding="utf-8"), sop_id
+                return p.read_text(encoding="utf-8")
             except Exception:
-                pass
+                continue
+    return ""
 
-    # 2) Scan jsonl for matches
+def build_sop_context_from_jsonl(alert: Dict[str, Any], sop_id: str, incident_key: str) -> str:
     lines = _load_jsonl_candidates()
     best: Optional[SopLine] = None
-    # a) exact sop_id
     for ln in lines:
         if (ln.sop_id or "").strip() == sop_id:
             best = ln
             break
-    # b) same incident_key
     if best is None:
         for ln in lines:
             if (ln.incident_key or "").strip() == incident_key:
                 best = ln
                 break
-    # c) key-matching with priority ranking
     if best is None:
         candidates: List[SopLine] = []
         for ln in lines:
@@ -260,25 +250,21 @@ def build_sop_context_with_id(alert: Dict[str, Any], sop_dir: Path) -> Tuple[str
         if candidates:
             candidates.sort(key=lambda x: _priority_weight(x.priority), reverse=True)
             best = candidates[0]
-
     if best is None:
-        return "", sop_id
-
-    parts: List[str] = [f"### [SOP] Preloaded knowledge (high priority)\nMatched SOP ID: {sop_id}\n"]
-    parts.append(_join_section("Command", best.command, 5))
-    parts.append(_join_section("Metric", best.metric, 5))
-    parts.append(_join_section("Log", best.log, 3))
-    parts.append(_join_section("Parameter", best.parameter, 3))
-    parts.append(_join_section("FixAction", best.fix_action, 3))
-
-    return "\n".join([p for p in parts if p]).strip(), sop_id
+        return ""
+    parts = [f"### [SOP] Preloaded knowledge (high priority)\nMatched SOP ID: {sop_id}\n"]
+    parts.append(_pick_items(best, "Command", "command", 5))
+    parts.append(_pick_items(best, "Metric", "metric", 5))
+    parts.append(_pick_items(best, "Log", "log", 3))
+    parts.append(_pick_items(best, "Parameter", "parameter", 3))
+    parts.append(_pick_items(best, "FixAction", "fix_action", 3))
+    return "\n".join([p for p in parts if p]).strip()
 
 
 # =========================
 # Incident key & sop_id (ported from Go)
 # =========================
 def _dig(d: Dict[str, Any], path: str) -> Any:
-    """Simple dot-path dig (e.g. 'inputs.prompt' or 'metadata.alert_name')"""
     cur: Any = d
     for key in path.split("."):
         if isinstance(cur, dict) and key in cur:
@@ -289,11 +275,9 @@ def _dig(d: Dict[str, Any], path: str) -> Any:
 
 def _normalize(s: str) -> str:
     s = (s or "").strip().lower()
-    # replace spaces & non-alnum with underscore; collapse repeats
     s = re.sub(r"[^a-z0-9]+", "_", s)
     s = re.sub(r"_+", "_", s)
-    s = s.strip("_")
-    return s
+    return s.strip("_")
 
 def _first_non_empty(*vals: Optional[str]) -> str:
     for v in vals:
@@ -302,8 +286,7 @@ def _first_non_empty(*vals: Optional[str]) -> str:
     return ""
 
 def build_incident_key(alert: Dict[str, Any]) -> str:
-    """Format: service_category_severity_region[_alertname][_groupid] with normalization."""
-    # Extract candidate fields with fallbacks across common nests
+    """service_category_severity_region[_alertname][_groupid]"""
     service = _first_non_empty(
         str(alert.get("service", "")),
         str(_dig(alert, "inputs.service") or ""),
@@ -353,85 +336,85 @@ def build_incident_key(alert: Dict[str, Any]) -> str:
 
 
 # =========================
-# Q client wrapper
+# Q client wrapper (uses repo's TerminalAPIClient, kept open)
 # =========================
 class QClient:
     def __init__(self, idx: int):
         self.idx = idx
-        self._cm = TerminalAPIClient(
+        self._ctx = TerminalAPIClient(
             host=Q_HOST, port=Q_PORT, terminal_type=TerminalType.QCLI,
             username=Q_USER, password=Q_PASS
         )
-        self.client = None
+        self.client: Optional[TerminalAPIClient] = None
         self.lock = asyncio.Lock()
         self.ready = False
 
     async def connect(self):
-        self.client = await self._cm.__aenter__()
+        self.client = await self._ctx.__aenter__()
         self.ready = True
 
     async def close(self):
         try:
-            await self._cm.__aexit__(None, None, None)
+            await self._ctx.__aexit__(None, None, None)
         finally:
             self.client = None
             self.ready = False
 
-    async def _exec_collect(self, cmd: str) -> str:
+    async def exec_collect(self, cmd: str) -> str:
         assert self.client is not None
-        chunks: List[str] = []
-        async for piece in self.client.execute_command_stream(cmd):
-            if isinstance(piece, dict):
-                t = piece.get("type")
+        out: List[str] = []
+        async for chunk in self.client.execute_command_stream(cmd):
+            if isinstance(chunk, dict):
+                t = chunk.get("type")
                 if t == "content":
-                    chunks.append(piece.get("content", ""))
+                    out.append(chunk.get("content", ""))
                 elif t == "complete":
                     break
             else:
-                chunks.append(str(piece))
-        return "".join(chunks)
+                out.append(str(chunk))
+        return "".join(out)
 
-    async def warmup(self):
-        try:
-            await self._exec_collect("/help")
-        except Exception:
-            pass
-
-    async def load_conversation_if_exists(self, sop_id: str):
+    async def load_if_exists(self, sop_id: str):
         if not sop_id:
             return
         CONV_DIR.mkdir(parents=True, exist_ok=True)
-        conv_path = CONV_DIR / f"{sop_id}.qconv"
-        if conv_path.exists():
-            await self._exec_collect(f"/load {str(conv_path.resolve())}")
+        p = CONV_DIR / f"{sop_id}.qconv"
+        if p.exists():
+            await self.exec_collect(f"/load {str(p.resolve())}")
 
     async def compact_and_save(self, sop_id: str):
         if not sop_id:
             return
         CONV_DIR.mkdir(parents=True, exist_ok=True)
-        conv_path = CONV_DIR / f"{sop_id}.qconv"
-        await self._exec_collect("/compact")
-        await self._exec_collect(f"/save {str(conv_path.resolve())}")
+        p = CONV_DIR / f"{sop_id}.qconv"
+        await self.exec_collect("/compact")
+        await self.exec_collect(f"/save {str(p.resolve())}")
 
-    async def ask_q(self, prompt: str) -> str:
-        return await self._exec_collect(prompt)
+    async def healthy(self) -> bool:
+        """Lightweight health check: try a noop command that should be safe."""
+        try:
+            _ = await self.exec_collect("/help")
+            return True
+        except Exception:
+            return False
 
 
 # =========================
-# Connection pool
+# Connection pool (N long-lived clients)
 # =========================
 class QPool:
     def __init__(self, size: int):
         self.size = size
         self.clients: List[QClient] = [QClient(i) for i in range(size)]
+        self.available: "asyncio.Queue[int]" = asyncio.Queue()
         self._ready = asyncio.Event()
 
     async def start(self):
-        async def _start_one(cli: QClient):
+        async def _start_one(i: int, cli: QClient):
             await cli.connect()
-            await cli.warmup()
+            await self.available.put(i)
 
-        tasks = [asyncio.create_task(_start_one(c)) for c in self.clients]
+        tasks = [asyncio.create_task(_start_one(i, c)) for i, c in enumerate(self.clients)]
         await asyncio.gather(*tasks, return_exceptions=True)
         ready = sum(1 for c in self.clients if c.ready)
         if ready >= READY_NEED:
@@ -440,24 +423,33 @@ class QPool:
     async def stop(self):
         await asyncio.gather(*[c.close() for c in self.clients], return_exceptions=True)
 
-    def stats(self) -> Tuple[int, int]:
-        return sum(1 for c in self.clients if c.ready), self.size
+    def stats(self) -> Tuple[int, int, int]:
+        return sum(1 for c in self.clients if c.ready), self.size, self.available.qsize()
 
     @asynccontextmanager
     async def acquire(self):
-        # Simple round-robin scan for a free client (with lock to ensure per-conn serial use)
-        while True:
-            for cli in self.clients:
-                if not cli.ready:
-                    continue
-                if not cli.lock.locked():
-                    await cli.lock.acquire()
-                    try:
-                        yield cli
-                    finally:
-                        cli.lock.release()
-                    return
-            await asyncio.sleep(0.01)
+        idx = await self.available.get()
+        cli = self.clients[idx]
+        try:
+            await cli.lock.acquire()
+            try:
+                yield cli
+            finally:
+                cli.lock.release()
+        except Exception:
+            # If something bad happened before yielding, mark unhealthy & try to reconnect
+            cli.ready = False
+            try:
+                await cli.close()
+            except Exception:
+                pass
+            try:
+                await cli.connect()
+            except Exception:
+                pass
+        finally:
+            # Return index to the pool regardless; caller will retry on error response
+            await self.available.put(idx)
 
     async def wait_ready(self, timeout: float = 30.0):
         try:
@@ -474,27 +466,22 @@ def _read_task_doc(budget: int = TASK_DOC_BUDGET) -> str:
         return ""
     b = TASK_INSTR_PATH.read_bytes()
     if budget and len(b) > budget:
-        b = b[:budget] + "\n...".encode("utf-8")
+        b = b[:budget] + b"\n..."
     return b.decode("utf-8", "ignore").strip()
 
 TASK_DOC = ""
 
-def build_prompt_and_ids(payload: Dict[str, Any]) -> Tuple[str, str, str]:
-    """Return (prompt, incident_key, sop_id)."""
-    # Prefer request.alert; otherwise assume payload itself is the alert
-    alert = payload.get("alert") if isinstance(payload, dict) else None
-    if alert is None:
-        alert = payload
-
-    if not isinstance(alert, dict):
-        raise HTTPException(status_code=400, detail="alert must be a JSON object or set payload.alert")
-
+def build_prompt_and_ids(alert: Dict[str, Any], extra_user_prompt: Optional[str]) -> Tuple[str, str]:
     incident_key = build_incident_key(alert)
-    sop_text, sop_id = build_sop_context_with_id(alert, SOP_DIR)
+    sop_id = "sop_" + hashlib.sha1(incident_key.encode("utf-8")).hexdigest()[:12]
+
+    # SOP priority: SOP_DIR file > JSONL match
+    sop_text = build_sop_context_from_files(sop_id)
+    if not sop_text:
+        sop_text = build_sop_context_from_jsonl(alert, sop_id, incident_key)
 
     parts: List[str] = []
-    parts.append("You are an AIOps assistant.")
-
+    # You can add a brief system priming line here if needed
     if TASK_DOC:
         parts.append("## TASK INSTRUCTIONS (verbatim)\n" + TASK_DOC)
 
@@ -507,26 +494,26 @@ def build_prompt_and_ids(payload: Dict[str, Any]) -> Tuple[str, str, str]:
     if sop_text:
         parts.append(sop_text)
 
-    final_prompt = "\n\n".join([p for p in parts if p.strip()])
-    return final_prompt, incident_key, sop_id
+    if extra_user_prompt:
+        parts.append("## USER QUERY\n" + extra_user_prompt)
+
+    return "\n\n".join([p for p in parts if p.strip()]), sop_id
 
 
 # =========================
 # FastAPI app
 # =========================
-app = FastAPI(title="Q Proxy (Python) with Warmed WS Pool")
+app = FastAPI(title="Q Proxy (Python) — Long‑lived WS Pool")
 pool = QPool(POOL_SIZE)
 
 class CallReq(BaseModel):
-    sop_id: Optional[str] = None  # optional override
-    alert: Optional[Dict[str, Any]] = None
-    prompt: Optional[str] = None  # if you want to pass a custom user text
+    alert: Dict[str, Any]        # required
+    prompt: Optional[str] = None # optional extra prompt
 
 class CallResp(BaseModel):
     ok: bool
     answer: Optional[str] = None
     sop_id: Optional[str] = None
-    incident_key: Optional[str] = None
     error: Optional[str] = None
 
 @app.on_event("startup")
@@ -535,61 +522,81 @@ async def _startup():
     CONV_DIR.mkdir(parents=True, exist_ok=True)
     SOP_DIR.mkdir(parents=True, exist_ok=True)
     TASK_DOC = _read_task_doc(TASK_DOC_BUDGET)
-    # warm the pool
     asyncio.create_task(pool.start())
     await pool.wait_ready(10.0)
 
 @app.get("/healthz")
 async def healthz():
-    ready, size = pool.stats()
-    return {"ready": ready, "size": size}
+    ready, size, avail = pool.stats()
+    return {"ready": ready, "size": size, "available": avail}
 
 @app.get("/readyz")
 async def readyz():
-    ready, _ = pool.stats()
+    ready, _, _ = pool.stats()
     return "ok" if ready >= READY_NEED else "warming"
 
 @app.post("/call", response_model=CallResp)
 async def call(req: CallReq):
-    # Build prompt (always include task doc + sop if resolvable)
+    # Build prompt (task instructions + alert JSON + SOP; always included)
     try:
-        # If req.prompt given, treat it as an extra user query appended after alert/sop
-        payload: Dict[str, Any] = {"alert": req.alert or {}}
-        prompt, incident_key, sop_id_auto = build_prompt_and_ids(payload)
-        sop_id = (req.sop_id or sop_id_auto or "").strip()
-
-        if req.prompt:
-            prompt = f"{prompt}\n\n## USER QUERY\n{req.prompt}"
-
-    except HTTPException:
-        raise
+        prompt, sop_id = build_prompt_and_ids(req.alert, req.prompt)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"build prompt failed: {e}")
 
     try:
         async with pool.acquire() as cli:
-            # 1) load previous conversation if exists
             if sop_id:
-                await cli.load_conversation_if_exists(sop_id)
+                await cli.load_if_exists(sop_id)
 
-            # 2) ask Q
-            out = await asyncio.wait_for(cli.ask_q(prompt), timeout=REQUEST_TIMEOUT)
+            out = await asyncio.wait_for(cli.exec_collect(prompt), timeout=REQUEST_TIMEOUT)
             cleaned = clean_text(out)
 
-            # 3) if valid -> compact + save
             if is_valid_json_result(cleaned) and sop_id:
                 await cli.compact_and_save(sop_id)
 
-            return CallResp(ok=True, answer=cleaned, sop_id=sop_id, incident_key=incident_key)
+            return CallResp(ok=True, answer=cleaned, sop_id=sop_id)
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="request timeout")
     except Exception as e:
-        return CallResp(ok=False, error=str(e), sop_id=sop_id, incident_key=incident_key)
+        return CallResp(ok=False, error=str(e), sop_id=sop_id)
+
+
+# =========================
+# Optional: local test using /mnt/data/sdn5_cpu.json
+# =========================
+@app.get("/test")
+async def test_once():
+    sample = Path("/mnt/data/sdn5_cpu.json")
+    if not sample.exists():
+        raise HTTPException(404, detail="sample not found: /mnt/data/sdn5_cpu.json")
+    try:
+        alert = json.loads(sample.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(400, detail=f"invalid sample json: {e}")
+    resp = await call(CallReq(alert=alert))
+    return resp
+
 
 def main():
     import uvicorn
     uvicorn.run("qproxy_pool:app", host=HTTP_HOST, port=HTTP_PORT, log_level="info")
 
 if __name__ == "__main__":
-    main()
+    if os.getenv("RUN_TEST_ON_START", "0") == "1":
+        async def _run():
+            await _startup()
+            # Call /test logic inline
+            try:
+                sample = Path("/mnt/data/sdn5_cpu.json")
+                alert = json.loads(sample.read_text(encoding="utf-8"))
+                r = await call(CallReq(alert=alert))
+                print("[TEST] ok:", r.ok)
+                print("[TEST] sop_id:", r.sop_id)
+                if r.answer:
+                    print("[TEST] answer preview:", r.answer[:600], "...")
+            except Exception as e:
+                print("[TEST] failed:", e)
+        asyncio.run(_run())
+    else:
+        main()

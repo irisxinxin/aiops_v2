@@ -15,7 +15,7 @@ export Q_PORT="${Q_PORT:-7682}"
 export Q_USER="${Q_USER:-demo}"
 export Q_PASS="${Q_PASS:-password123}"
 
-export POOL_SIZE="${POOL_SIZE:-2}"
+export POOL_SIZE="${POOL_SIZE:-1}"
 export READY_NEED="${READY_NEED:-1}"
 
 export HTTP_HOST="${HTTP_HOST:-0.0.0.0}"
