@@ -62,6 +62,7 @@ ALERT_JSON_PRETTY = os.getenv("QPROXY_ALERT_JSON_PRETTY", "0") == "1"
 REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "300"))  # seconds
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
+WARMUP_DELAY_MS = int(os.getenv("WARMUP_DELAY_MS", "500"))  # sequential warmup delay between connections
 
 
 # =========================
@@ -410,15 +411,21 @@ class QPool:
         self._ready = asyncio.Event()
 
     async def start(self):
-        async def _start_one(i: int, cli: QClient):
-            await cli.connect()
-            await self.available.put(i)
-
-        tasks = [asyncio.create_task(_start_one(i, c)) for i, c in enumerate(self.clients)]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        ready = sum(1 for c in self.clients if c.ready)
-        if ready >= READY_NEED:
-            self._ready.set()
+        # Sequential warmup to avoid CPU spikes from concurrent Q/MCP loading
+        for i, cli in enumerate(self.clients):
+            try:
+                await cli.connect()
+                await self.available.put(i)
+            except Exception:
+                # Keep going; remaining connections may still succeed
+                pass
+            # Mark ready as soon as threshold met
+            ready_now = sum(1 for c in self.clients if c.ready)
+            if ready_now >= READY_NEED:
+                self._ready.set()
+            # Small delay between spawns to smooth CPU usage
+            if WARMUP_DELAY_MS > 0 and i + 1 < self.size:
+                await asyncio.sleep(WARMUP_DELAY_MS / 1000.0)
 
     async def stop(self):
         await asyncio.gather(*[c.close() for c in self.clients], return_exceptions=True)
