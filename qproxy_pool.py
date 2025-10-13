@@ -363,7 +363,12 @@ class QClient:
 
     async def connect(self):
         self.client = await self._ctx.__aenter__()
-        self.ready = True
+        # Warmup: run a lightweight command to ensure Q CLI is responsive
+        try:
+            await asyncio.wait_for(self.exec_collect("/help"), timeout=15)
+            self.ready = True
+        except Exception:
+            self.ready = False
 
     async def close(self):
         try:
@@ -426,9 +431,19 @@ class QPool:
         for i, cli in enumerate(self.clients):
             try:
                 log.info("pool.start: connecting client idx=%d host=%s port=%d", i, Q_HOST, Q_PORT)
-                await cli.connect()
-                await self.available.put(i)
-                log.info("pool.start: client idx=%d connected and enqueued", i)
+                # up to 3 attempts to get a healthy session
+                healthy = False
+                for _ in range(3):
+                    await cli.connect()
+                    if cli.ready:
+                        healthy = True
+                        break
+                    await asyncio.sleep(1)
+                if healthy:
+                    await self.available.put(i)
+                    log.info("pool.start: client idx=%d ready and enqueued", i)
+                else:
+                    log.warning("pool.start: client idx=%d not ready after warmup, skipping enqueue", i)
             except Exception as e:
                 # Keep going; remaining connections may still succeed
                 log.error("pool.start: client idx=%d connect failed: %s", i, e)
