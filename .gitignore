@@ -13,6 +13,7 @@ env/
 # Logs & runtime
 logs/
 *.log
+*.pid
 
 # Conversations cache (qconv files)
 conversations/
