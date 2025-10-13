@@ -9,6 +9,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 cd "$REPO_ROOT"
 
+# Resolve python binary (prefer python3)
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || echo python3)}"
+
 # ---- Config (env-overridable) ----
 export Q_HOST="${Q_HOST:-127.0.0.1}"
 export Q_PORT="${Q_PORT:-7682}"
@@ -56,8 +59,8 @@ is_port_open() {
 }
 
 if ! is_port_open; then
-  echo "[INFO] Starting ttyd (no-auth) on :$Q_PORT ..."
-  nohup ttyd --ping-interval 25 -p "$Q_PORT" q \
+  echo "[INFO] Starting ttyd (no-auth, writable) on :$Q_PORT ..."
+  nohup ttyd --ping-interval 25 -p "$Q_PORT" --writable q \
     > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
   sleep 1
 else
@@ -65,8 +68,8 @@ else
 fi
 
 # ---- Start Python Q proxy ----
-echo "[INFO] Starting Q proxy on ${HTTP_HOST}:${HTTP_PORT} ..."
-nohup python qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
+echo "[INFO] Starting Q proxy on ${HTTP_HOST}:${HTTP_PORT} using ${PYTHON_BIN} ..."
+nohup "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
 
 cat <<EOF
 [OK] Processes started.
