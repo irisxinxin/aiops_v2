@@ -91,11 +91,45 @@ CTRL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')  # keep \t \n \r
 TUI_PREFIX = re.compile(r'(?m)^(>|!>|\s*\x1b\[0m)+\s*')
 SPINNER = re.compile(r'[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\s*Thinking\.\.\.')
 
+# TUI 清理（按用户要求）
+ANSI_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')  # 通用 ANSI
+ALT_SCREEN_RE = re.compile(r'\x1b\[\?1049[hl]')                 # 备用屏切换
+OSC_LINK_RE = re.compile(r'\x1b]8;;.*?\x07(.*?)\x1b]8;;\x07', re.DOTALL)  # 超链接OSC，保留可见文本
+
+def sanitize_tui(s: str) -> str:
+    # 1) 处理回车覆盖：保留每行最后一次回写的内容
+    parts = []
+    for line in s.split('\n'):
+        if '\r' in line:
+            line = line.split('\r')[-1]
+        parts.append(line)
+    s = '\n'.join(parts)
+
+    # 2) 处理退格：反复消去 "X\b"
+    while '\b' in s:
+        s = re.sub('.\x08', '', s)
+
+    # 3) 去掉备用屏切换与超链接包装
+    s = ALT_SCREEN_RE.sub('', s)
+    s = OSC_LINK_RE.sub(r'\1', s)
+
+    # 4) 去掉剩余 ANSI 转义（颜色/光标/清屏等）
+    s = ANSI_RE.sub('', s)
+
+    # 5) 压缩多余空行
+    s = re.sub(r'\n{3,}', '\n\n', s).strip()
+    return s
+
 REQUIRED_TOP_LEVEL_KEYS = {
     "tool_calls", "root_cause", "evidence", "confidence", "suggested_actions", "analysis_summary"
 }
 
 def clean_text(s: str) -> str:
+    # 先进行更强的 TUI 清理
+    try:
+        s = sanitize_tui(s)
+    except Exception:
+        pass
     s = CSI.sub("", s)
     s = OSC.sub("", s)
     s = CTRL.sub("", s)
