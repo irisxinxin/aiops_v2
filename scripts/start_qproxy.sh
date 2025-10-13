@@ -131,8 +131,15 @@ if [ -f ./logs/ttyd.pid ]; then sudo kill "$(cat ./logs/ttyd.pid)" 2>/dev/null |
 # Ensure port is free, then start ttyd
 kill_port "$Q_PORT"
 echo "[INFO] Starting ttyd (no-auth, writable) on :$Q_PORT using ${Q_CMD} ..."
-nohup ttyd --ping-interval 25 -p "$Q_PORT" --writable "$Q_CMD" \
-  > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
+if [ -n "${INVOCATION_ID:-}" ]; then
+  # systemd mode: background ttyd, keep qproxy in foreground
+  ttyd --ping-interval 25 -p "$Q_PORT" --writable "$Q_CMD" \
+    > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
+else
+  # manual mode: nohup to detach
+  nohup ttyd --ping-interval 25 -p "$Q_PORT" --writable "$Q_CMD" \
+    > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
+fi
 sleep 1
 
 # ---- Start Python Q proxy ----
@@ -141,27 +148,29 @@ if [ -f ./logs/qproxy.pid ]; then sudo kill "$(cat ./logs/qproxy.pid)" 2>/dev/nu
 # Free HTTP port then start proxy
 kill_port "$HTTP_PORT"
 echo "[INFO] Starting Q proxy on ${HTTP_HOST}:${HTTP_PORT} using ${PYTHON_BIN} ..."
-nohup "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
-
-cat <<EOF
+if [ -n "${INVOCATION_ID:-}" ]; then
+  # systemd mode: run in foreground for supervision
+  exec "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1
+else
+  # manual mode: detach and print hints
+  nohup "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
+  cat <<EOF
 [OK] Processes started.
-    ttyd PID:   
-      - \
-        \$(test -f ./logs/ttyd.pid && cat ./logs/ttyd.pid || echo "(external or no pid)")
-    qproxy PID: \
-      - \
-        \$(cat ./logs/qproxy.pid)
+  ttyd PID: 
+    - \
+      \$(test -f ./logs/ttyd.pid && cat ./logs/ttyd.pid || echo "(external or no pid)")
+  qproxy PID: \
+    - \
+      \$(cat ./logs/qproxy.pid)
 
 Health checks:
   curl -sS http://127.0.0.1:${HTTP_PORT}/healthz
   curl -sS http://127.0.0.1:${HTTP_PORT}/readyz
 
-Test with local alert JSON:
-  jq -c '{alert:.}' ./sdn5_cpu.json | curl -sS -X POST 'http://127.0.0.1:${HTTP_PORT}/call' -H 'Content-Type: application/json' --data-binary @-
-
 Stop:
   kill \$(cat ./logs/qproxy.pid 2>/dev/null || echo) || true
   kill \$(cat ./logs/ttyd.pid 2>/dev/null || echo) || true
 EOF
+fi
 
 
