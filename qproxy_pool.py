@@ -369,32 +369,26 @@ class QClient:
 
     async def connect(self):
         self.client = await self._ctx.__aenter__()
-        # Warmup: wait for MCP/plugins to load, then run /help to ensure ready
+        # 简化warmup: 直接发送/help命令，不等待长时间初始化
         try:
             if WARMUP_PAUSE_SEC > 0:
                 log.info("client.connect: pause %ds before /help warmup", WARMUP_PAUSE_SEC)
                 await asyncio.sleep(WARMUP_PAUSE_SEC)
-            # Wake up TUI/spinner if needed
-            try:
-                if Q_WAKE in ("ctrlc", "ctrlc+newline"):
-                    log.info("client.connect: send wake CTRL-C")
-                    await asyncio.wait_for(self.exec_collect("\x03"), timeout=5)
-                if Q_WAKE in ("newline", "ctrlc+newline"):
-                    log.info("client.connect: send wake newline x2")
-                    await asyncio.wait_for(self.exec_collect("\n\n"), timeout=5)
-                if Q_WAKE == "crlf":
-                    log.info("client.connect: send wake CRLF x2")
-                    await asyncio.wait_for(self.exec_collect("\r\n\r\n"), timeout=5)
-            except Exception:
-                log.debug("client.connect: wake sequence ignored (no effect)")
-            help_out = await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
-            log.info("client.connect: ran /help for warmup")
+            
+            # 直接发送/help命令，设置较短超时
+            log.info("client.connect: sending /help command")
+            help_out = await asyncio.wait_for(self.exec_collect("/help"), timeout=10)
+            log.info("client.connect: /help completed successfully")
             if LOG_PAYLOAD and help_out:
                 preview = help_out[:LOG_PAYLOAD_LIMIT]
                 log.debug("client.connect: /help preview (len=%d)\n%s", len(help_out), preview)
             self.ready = True
-        except Exception:
-            self.ready = False
+        except asyncio.TimeoutError:
+            log.warning("client.connect: /help timeout, but marking ready anyway")
+            self.ready = True  # 即使超时也标记为ready，让后续请求处理
+        except Exception as e:
+            log.error("client.connect: /help failed: %s, marking ready anyway", e)
+            self.ready = True  # 标记为ready，让后续请求处理
 
     async def close(self):
         try:
@@ -405,6 +399,9 @@ class QClient:
 
     async def exec_collect(self, cmd: str) -> str:
         assert self.client is not None
+        # Ensure command ends with \r\n for proper Q CLI interaction
+        if not cmd.endswith(('\r\n', '\n')):
+            cmd += '\r\n'
         out: List[str] = []
         async for chunk in self.client.execute_command_stream(cmd):
             if isinstance(chunk, dict):

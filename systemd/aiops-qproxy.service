@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 # 请将 WorkingDirectory 修改为部署机器上的仓库绝对路径
-WorkingDirectory=/opt/aiops_v2
+WorkingDirectory=/home/ubuntu/huixin/aiops_v2
 ExecStart=/usr/bin/bash -lc 'bash scripts/start_qproxy.sh'
 
 # 重启与资源限制
@@ -18,6 +18,17 @@ TasksMax=512
 
 # 运行环境（可按需追加）
 Environment=PYTHONUNBUFFERED=1
+Environment=Q_LAZY=0
+Environment=READY_NEED=1
+Environment=WARMUP_PAUSE_SEC=30
+Environment=ACQUIRE_TIMEOUT=60
+Environment=Q_WAKE=newline
+Environment=TERM=dumb
+Environment=NO_COLOR=1
+Environment=CLICOLOR=0
+Environment=QPROXY_LOG_LEVEL=DEBUG
+Environment=QPROXY_LOG_PAYLOAD=1
+Environment=QPROXY_LOG_PAYLOAD_LIMIT=2048
 
 # 如需以非 root 运行，取消注释并设置为已有用户
 #User=aiops
