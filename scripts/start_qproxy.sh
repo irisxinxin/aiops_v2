@@ -35,13 +35,9 @@ export QPROXY_ALERT_JSON_PRETTY="${QPROXY_ALERT_JSON_PRETTY:-0}"
 # ---- Prepare folders ----
 mkdir -p "$CONV_DIR" "$SOP_DIR" ./logs
 
-# ---- Python venv + deps ----
-if [ ! -d .venv ]; then
-  python3 -m venv .venv
-fi
-source .venv/bin/activate
-python -m pip install -U pip >/dev/null
-python -m pip install fastapi "uvicorn[standard]" "git+https://github.com/aleck31/terminal-api-for-qcli@master"
+# ---- Python environment ----
+# Assumes Python runtime and dependencies are pre-installed in the environment.
+# If you need venv/pip installs, manage them outside this script (e.g., in Dockerfile or base image).
 
 # ---- Check ttyd availability ----
 if ! command -v ttyd >/dev/null 2>&1; then
