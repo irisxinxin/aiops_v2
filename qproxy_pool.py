@@ -380,11 +380,11 @@ class QClient:
                     log.info("client.connect: send wake CTRL-C")
                     await asyncio.wait_for(self.exec_collect("\x03"), timeout=5)
                 if Q_WAKE in ("newline", "ctrlc+newline"):
-                    log.info("client.connect: send wake newline\\n")
-                    await asyncio.wait_for(self.exec_collect("\n"), timeout=5)
+                    log.info("client.connect: send wake newline x2")
+                    await asyncio.wait_for(self.exec_collect("\n\n"), timeout=5)
                 if Q_WAKE == "crlf":
-                    log.info("client.connect: send wake CRLF\\r\\n")
-                    await asyncio.wait_for(self.exec_collect("\r\n"), timeout=5)
+                    log.info("client.connect: send wake CRLF x2")
+                    await asyncio.wait_for(self.exec_collect("\r\n\r\n"), timeout=5)
             except Exception:
                 log.debug("client.connect: wake sequence ignored (no effect)")
             help_out = await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
