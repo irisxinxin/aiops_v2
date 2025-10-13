@@ -98,15 +98,34 @@ kill_port() {
     pids=$(sudo lsof -i TCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u)
   fi
   if [ -n "$pids" ]; then
-    echo "[WARN] Port $port occupied by PIDs: $pids; attempting to kill..."
-    for pid in $pids; do kill "$pid" 2>/dev/null || true; done
+    echo "[WARN] Port $port occupied by PIDs: $pids; attempting to kill (sudo) ..."
+    for pid in $pids; do sudo kill "$pid" 2>/dev/null || true; done
     sleep 1
-    for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
+    for pid in $pids; do sudo kill -9 "$pid" 2>/dev/null || true; done
   fi
+  # fuser fallback
+  if command -v fuser >/dev/null 2>&1; then
+    sudo fuser -k -n tcp "$port" 2>/dev/null || true
+  fi
+  # wait up to 5s
+  for i in {1..10}; do
+    if command -v ss >/dev/null 2>&1; then
+      sudo ss -ltn | grep -q ":${port} " || break
+    elif command -v lsof >/dev/null 2>&1; then
+      sudo lsof -i TCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1 || break
+    else
+      break
+    fi
+    sleep 0.5
+  done
 }
 
+# Stop systemd service if present to avoid conflicts
+if command -v systemctl >/dev/null 2>&1; then
+  sudo systemctl stop aiops-qproxy.service 2>/dev/null || true
+fi
 # Stop previous ttyd by pid file if present
-if [ -f ./logs/ttyd.pid ]; then kill "$(cat ./logs/ttyd.pid)" 2>/dev/null || true; fi
+if [ -f ./logs/ttyd.pid ]; then sudo kill "$(cat ./logs/ttyd.pid)" 2>/dev/null || true; fi
 # Ensure port is free, then start ttyd
 kill_port "$Q_PORT"
 echo "[INFO] Starting ttyd (no-auth, writable) on :$Q_PORT using ${Q_CMD} ..."
@@ -116,10 +135,9 @@ sleep 1
 
 # ---- Start Python Q proxy ----
 # Stop previous proxy by pid file if present
-if [ -f ./logs/qproxy.pid ]; then kill "$(cat ./logs/qproxy.pid)" 2>/dev/null || true; fi
+if [ -f ./logs/qproxy.pid ]; then sudo kill "$(cat ./logs/qproxy.pid)" 2>/dev/null || true; fi
 # Free HTTP port then start proxy
-if command -v ss >/dev/null 2>&1; then sudo ss -ltnp | grep ":${HTTP_PORT} " >/dev/null 2>&1 && kill_port "$HTTP_PORT"; fi
-if command -v lsof >/dev/null 2>&1; then sudo lsof -i TCP:"$HTTP_PORT" -sTCP:LISTEN -t >/dev/null 2>&1 && kill_port "$HTTP_PORT"; fi
+kill_port "$HTTP_PORT"
 echo "[INFO] Starting Q proxy on ${HTTP_HOST}:${HTTP_PORT} using ${PYTHON_BIN} ..."
 nohup "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
 
