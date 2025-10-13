@@ -69,6 +69,7 @@ WARMUP_DELAY_MS = int(os.getenv("WARMUP_DELAY_MS", "500"))  # sequential warmup 
 WARMUP_PAUSE_SEC = int(os.getenv("WARMUP_PAUSE_SEC", "30"))  # pause before first /help to wait MCP loading
 Q_LAZY = os.getenv("Q_LAZY", "0") in ("1", "true", "TRUE", "True")
 ACQUIRE_TIMEOUT = float(os.getenv("ACQUIRE_TIMEOUT", "60"))  # seconds to wait for a ready client
+Q_WAKE = os.getenv("Q_WAKE", "newline").lower()  # newline | crlf | ctrlc | ctrlc+newline | none
 
 # Logging config
 LOG_LEVEL = os.getenv("QPROXY_LOG_LEVEL", "INFO").upper()
@@ -373,7 +374,21 @@ class QClient:
             if WARMUP_PAUSE_SEC > 0:
                 log.info("client.connect: pause %ds before /help warmup", WARMUP_PAUSE_SEC)
                 await asyncio.sleep(WARMUP_PAUSE_SEC)
+            # Wake up TUI/spinner if needed
+            try:
+                if Q_WAKE in ("ctrlc", "ctrlc+newline"):
+                    log.info("client.connect: send wake CTRL-C")
+                    await asyncio.wait_for(self.exec_collect("\x03"), timeout=5)
+                if Q_WAKE in ("newline", "ctrlc+newline"):
+                    log.info("client.connect: send wake newline\\n")
+                    await asyncio.wait_for(self.exec_collect("\n"), timeout=5)
+                if Q_WAKE == "crlf":
+                    log.info("client.connect: send wake CRLF\\r\\n")
+                    await asyncio.wait_for(self.exec_collect("\r\n"), timeout=5)
+            except Exception:
+                log.debug("client.connect: wake sequence ignored (no effect)")
             help_out = await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
+            log.info("client.connect: ran /help for warmup")
             if LOG_PAYLOAD and help_out:
                 preview = help_out[:LOG_PAYLOAD_LIMIT]
                 log.debug("client.connect: /help preview (len=%d)\n%s", len(help_out), preview)
