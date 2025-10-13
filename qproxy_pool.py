@@ -67,9 +67,13 @@ HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
 WARMUP_DELAY_MS = int(os.getenv("WARMUP_DELAY_MS", "500"))  # sequential warmup delay between connections
 WARMUP_PAUSE_SEC = int(os.getenv("WARMUP_PAUSE_SEC", "30"))  # pause before first /help to wait MCP loading
+Q_LAZY = os.getenv("Q_LAZY", "0") in ("1", "true", "TRUE", "True")
+ACQUIRE_TIMEOUT = float(os.getenv("ACQUIRE_TIMEOUT", "60"))  # seconds to wait for a ready client
 
 # Logging config
 LOG_LEVEL = os.getenv("QPROXY_LOG_LEVEL", "INFO").upper()
+LOG_PAYLOAD = os.getenv("QPROXY_LOG_PAYLOAD", "0") == "1"
+LOG_PAYLOAD_LIMIT = int(os.getenv("QPROXY_LOG_PAYLOAD_LIMIT", "2048"))
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -369,7 +373,10 @@ class QClient:
             if WARMUP_PAUSE_SEC > 0:
                 log.info("client.connect: pause %ds before /help warmup", WARMUP_PAUSE_SEC)
                 await asyncio.sleep(WARMUP_PAUSE_SEC)
-            await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
+            help_out = await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
+            if LOG_PAYLOAD and help_out:
+                preview = help_out[:LOG_PAYLOAD_LIMIT]
+                log.debug("client.connect: /help preview (len=%d)\n%s", len(help_out), preview)
             self.ready = True
         except Exception:
             self.ready = False
@@ -432,6 +439,11 @@ class QPool:
 
     async def start(self):
         # Sequential warmup to avoid CPU spikes from concurrent Q/MCP loading
+        if Q_LAZY:
+            log.info("pool.start: LAZY mode enabled, skip pre-connect; will connect on first acquire")
+            if READY_NEED == 0 and not self._ready.is_set():
+                self._ready.set()
+            return
         for i, cli in enumerate(self.clients):
             try:
                 log.info("pool.start: connecting client idx=%d host=%s port=%d", i, Q_HOST, Q_PORT)
@@ -462,8 +474,26 @@ class QPool:
 
     @asynccontextmanager
     async def acquire(self):
-        log.debug("pool.acquire: waiting for available client ...")
-        idx = await self.available.get()
+        # In lazy mode or when queue is empty, try to establish one on-demand
+        if self.available.qsize() == 0:
+            for idx, cli in enumerate(self.clients):
+                if not cli.ready:
+                    log.info("pool.acquire: on-demand connect idx=%d", idx)
+                    try:
+                        await cli.connect()
+                        if cli.ready:
+                            await self.available.put(idx)
+                            log.info("pool.acquire: on-demand ready idx=%d", idx)
+                            break
+                    except Exception:
+                        log.exception("pool.acquire: on-demand connect failed idx=%d", idx)
+        # Wait with timeout so /call 不会无限挂起
+        log.debug("pool.acquire: waiting for available client (timeout=%ss) ...", int(ACQUIRE_TIMEOUT))
+        try:
+            idx = await asyncio.wait_for(self.available.get(), timeout=ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError as e:
+            log.warning("pool.acquire: timeout waiting for ready client")
+            raise
         cli = self.clients[idx]
         try:
             log.debug("pool.acquire: got idx=%d, acquiring lock ...", idx)
@@ -589,6 +619,9 @@ async def call(req: CallReq):
         prompt, sop_id = build_prompt_and_ids(req.alert, req.prompt)
         log.info("call: built prompt (sop_id=%s, alert_keys=%s, prompt_len=%d)",
                  sop_id, list(req.alert.keys())[:6], len(prompt))
+        if LOG_PAYLOAD:
+            prev = prompt[:LOG_PAYLOAD_LIMIT]
+            log.info("PROMPT (truncated=%d):\n%s", LOG_PAYLOAD_LIMIT, prev)
     except Exception as e:
         log.exception("call: build prompt failed")
         raise HTTPException(status_code=400, detail=f"build prompt failed: {e}")
@@ -603,6 +636,9 @@ async def call(req: CallReq):
             out = await asyncio.wait_for(cli.exec_collect(prompt), timeout=REQUEST_TIMEOUT)
             cleaned = clean_text(out)
             log.info("call: got response (len_raw=%d, len_cleaned=%d)", len(out), len(cleaned))
+            if LOG_PAYLOAD and cleaned:
+                rs = cleaned[:LOG_PAYLOAD_LIMIT]
+                log.info("RESPONSE (truncated=%d):\n%s", LOG_PAYLOAD_LIMIT, rs)
             if is_valid_json_result(cleaned) and sop_id:
                 log.info("call: valid JSON result detected; compact+save (sop_id=%s)", sop_id)
                 await cli.compact_and_save(sop_id)
