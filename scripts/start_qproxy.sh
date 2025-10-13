@@ -12,6 +12,10 @@ cd "$REPO_ROOT"
 # Resolve python binary (prefer python3)
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || echo python3)}"
 
+# Auto setup flags
+AUTO_SETUP="${AUTO_SETUP:-1}"       # 1: auto install deps; 0: skip
+USE_VENV="${USE_VENV:-1}"           # 1: use .venv; 0: install --user
+
 # ---- Config (env-overridable) ----
 export Q_HOST="${Q_HOST:-127.0.0.1}"
 export Q_PORT="${Q_PORT:-7682}"
@@ -38,9 +42,25 @@ export QPROXY_ALERT_JSON_PRETTY="${QPROXY_ALERT_JSON_PRETTY:-0}"
 # ---- Prepare folders ----
 mkdir -p "$CONV_DIR" "$SOP_DIR" ./logs
 
-# ---- Python environment ----
-# Assumes Python runtime and dependencies are pre-installed in the environment.
-# If you need venv/pip installs, manage them outside this script (e.g., in Dockerfile or base image).
+# ---- Python environment / deps (optional auto-setup) ----
+if [ "$AUTO_SETUP" = "1" ]; then
+  echo "[SETUP] Ensuring Python deps installed using ${PYTHON_BIN} (USE_VENV=$USE_VENV) ..."
+  if [ "$USE_VENV" = "1" ]; then
+    if [ ! -d .venv ]; then
+      "$PYTHON_BIN" -m venv .venv
+    fi
+    . .venv/bin/activate
+    PYTHON_BIN="$(pwd)/.venv/bin/python"
+  fi
+  # ensure pip exists and up-to-date
+  "$PYTHON_BIN" -m ensurepip -U >/dev/null 2>&1 || true
+  "$PYTHON_BIN" -m pip install -U pip >/dev/null
+  # terminal-api-for-qcli requires git for VCS install
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[WARN] git is not installed; VCS install may fail. Please install git if errors occur."
+  fi
+  "$PYTHON_BIN" -m pip install fastapi "uvicorn[standard]" "git+https://github.com/aleck31/terminal-api-for-qcli@master"
+fi
 
 # ---- Check ttyd availability ----
 if ! command -v ttyd >/dev/null 2>&1; then
