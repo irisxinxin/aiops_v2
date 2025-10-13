@@ -120,8 +120,9 @@ kill_port() {
   done
 }
 
-# Stop systemd service if present to avoid conflicts
-if command -v systemctl >/dev/null 2>&1; then
+# 若在非 systemd 场景下执行脚本，可尝试停止同名服务；
+# 在由 systemd 调用(存在 INVOCATION_ID)时跳过，避免自杀式停止。
+if [ -z "${INVOCATION_ID:-}" ] && command -v systemctl >/dev/null 2>&1; then
   sudo systemctl stop aiops-qproxy.service 2>/dev/null || true
 fi
 # Stop previous ttyd by pid file if present
