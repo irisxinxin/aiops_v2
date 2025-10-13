@@ -93,7 +93,8 @@ kill_port() {
   local port="$1"
   local pids=""
   if command -v ss >/dev/null 2>&1; then
-    pids=$(sudo ss -ltnp 2>/dev/null | awk -v p=":"$port" '$4 ~ p {print $NF}' | sed -E 's/.*pid=([0-9]+),.*/\1/' | sort -u)
+    # note: correct quoting for awk var (-v p=":$port") to avoid bash parse errors
+    pids=$(sudo ss -ltnp 2>/dev/null | awk -v p=":$port" '$4 ~ p {print $NF}' | sed -E 's/.*pid=([0-9]+),.*/\1/' | sort -u)
   elif command -v lsof >/dev/null 2>&1; then
     pids=$(sudo lsof -i TCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u)
   fi
