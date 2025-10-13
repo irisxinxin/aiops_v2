@@ -54,10 +54,10 @@ READY_NEED = int(os.getenv("READY_NEED", "1"))
 CONV_DIR = Path(os.getenv("CONV_DIR", "./conversations")).resolve()
 SOP_DIR = Path(os.getenv("SOP_DIR", "./sop")).resolve()
 
-SOP_JSONL_DIR = Path(os.getenv("SOP_JSONL_DIR", "/mnt/data")).resolve()
+SOP_JSONL_DIR = Path(os.getenv("SOP_JSONL_DIR", "./sop")).resolve()
 SOP_JSONL_FILE = os.getenv("SOP_JSONL_FILE", "sdn5_sop_full.jsonl")
 
-TASK_INSTR_PATH = Path(os.getenv("TASK_INSTR_PATH", "/mnt/data/task_instructions.md")).resolve()
+TASK_INSTR_PATH = Path(os.getenv("TASK_INSTR_PATH", "./task_instructions.md")).resolve()
 TASK_DOC_BUDGET = int(os.getenv("QPROXY_TASK_DOC_BUDGET", "2048"))
 ALERT_JSON_PRETTY = os.getenv("QPROXY_ALERT_JSON_PRETTY", "0") == "1"
 
