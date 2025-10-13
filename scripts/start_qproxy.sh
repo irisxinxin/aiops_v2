@@ -12,8 +12,8 @@ cd "$REPO_ROOT"
 # ---- Config (env-overridable) ----
 export Q_HOST="${Q_HOST:-127.0.0.1}"
 export Q_PORT="${Q_PORT:-7682}"
-export Q_USER="${Q_USER:-demo}"
-export Q_PASS="${Q_PASS:-password123}"
+export Q_USER="${Q_USER:-}"
+export Q_PASS="${Q_PASS:-}"
 
 export POOL_SIZE="${POOL_SIZE:-1}"
 export READY_NEED="${READY_NEED:-1}"
@@ -56,8 +56,8 @@ is_port_open() {
 }
 
 if ! is_port_open; then
-  echo "[INFO] Starting ttyd on :$Q_PORT ..."
-  nohup ttyd --ping-interval 25 -p "$Q_PORT" -c "$Q_USER:$Q_PASS" q \
+  echo "[INFO] Starting ttyd (no-auth) on :$Q_PORT ..."
+  nohup ttyd --ping-interval 25 -p "$Q_PORT" q \
     > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
   sleep 1
 else
