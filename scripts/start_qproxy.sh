@@ -19,6 +19,15 @@ USE_VENV="${USE_VENV:-1}"           # 1: use .venv; 0: install --user
 # Ensure local repo modules (e.g., ./api) are importable
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
+# Resolve Q CLI executable (prefer env Q_CMD; else fixed path; else PATH)
+if [ -z "${Q_CMD:-}" ]; then
+  if [ -x /home/ubuntu/.local/bin/q ]; then
+    Q_CMD="/home/ubuntu/.local/bin/q"
+  else
+    Q_CMD="$(command -v q || echo q)"
+  fi
+fi
+
 # ---- Config (env-overridable) ----
 export Q_HOST="${Q_HOST:-127.0.0.1}"
 export Q_PORT="${Q_PORT:-7682}"
@@ -79,16 +88,38 @@ is_port_open() {
   fi
 }
 
-if ! is_port_open; then
-  echo "[INFO] Starting ttyd (no-auth, writable) on :$Q_PORT ..."
-  nohup ttyd --ping-interval 25 -p "$Q_PORT" --writable q \
-    > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
-  sleep 1
-else
-  echo "[INFO] ttyd already listening on :$Q_PORT, skipping start"
-fi
+# Kill any process listening on a TCP port (best-effort)
+kill_port() {
+  local port="$1"
+  local pids=""
+  if command -v ss >/dev/null 2>&1; then
+    pids=$(sudo ss -ltnp 2>/dev/null | awk -v p=":"$port" '$4 ~ p {print $NF}' | sed -E 's/.*pid=([0-9]+),.*/\1/' | sort -u)
+  elif command -v lsof >/dev/null 2>&1; then
+    pids=$(sudo lsof -i TCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u)
+  fi
+  if [ -n "$pids" ]; then
+    echo "[WARN] Port $port occupied by PIDs: $pids; attempting to kill..."
+    for pid in $pids; do kill "$pid" 2>/dev/null || true; done
+    sleep 1
+    for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
+  fi
+}
+
+# Stop previous ttyd by pid file if present
+if [ -f ./logs/ttyd.pid ]; then kill "$(cat ./logs/ttyd.pid)" 2>/dev/null || true; fi
+# Ensure port is free, then start ttyd
+kill_port "$Q_PORT"
+echo "[INFO] Starting ttyd (no-auth, writable) on :$Q_PORT using ${Q_CMD} ..."
+nohup ttyd --ping-interval 25 -p "$Q_PORT" --writable "$Q_CMD" \
+  > ./logs/ttyd.out 2>&1 & echo $! > ./logs/ttyd.pid
+sleep 1
 
 # ---- Start Python Q proxy ----
+# Stop previous proxy by pid file if present
+if [ -f ./logs/qproxy.pid ]; then kill "$(cat ./logs/qproxy.pid)" 2>/dev/null || true; fi
+# Free HTTP port then start proxy
+if command -v ss >/dev/null 2>&1; then sudo ss -ltnp | grep ":${HTTP_PORT} " >/dev/null 2>&1 && kill_port "$HTTP_PORT"; fi
+if command -v lsof >/dev/null 2>&1; then sudo lsof -i TCP:"$HTTP_PORT" -sTCP:LISTEN -t >/dev/null 2>&1 && kill_port "$HTTP_PORT"; fi
 echo "[INFO] Starting Q proxy on ${HTTP_HOST}:${HTTP_PORT} using ${PYTHON_BIN} ..."
 nohup "${PYTHON_BIN}" qproxy_pool.py > ./logs/qproxy.out 2>&1 & echo $! > ./logs/qproxy.pid
 
