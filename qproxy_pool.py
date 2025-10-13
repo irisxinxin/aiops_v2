@@ -22,6 +22,7 @@ Run:
 """
 
 import os
+import logging
 import re
 import json
 import hashlib
@@ -65,6 +66,14 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "300"))  # seconds
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
 WARMUP_DELAY_MS = int(os.getenv("WARMUP_DELAY_MS", "500"))  # sequential warmup delay between connections
+
+# Logging config
+LOG_LEVEL = os.getenv("QPROXY_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("qproxy")
 
 
 # =========================
@@ -416,14 +425,18 @@ class QPool:
         # Sequential warmup to avoid CPU spikes from concurrent Q/MCP loading
         for i, cli in enumerate(self.clients):
             try:
+                log.info("pool.start: connecting client idx=%d host=%s port=%d", i, Q_HOST, Q_PORT)
                 await cli.connect()
                 await self.available.put(i)
-            except Exception:
+                log.info("pool.start: client idx=%d connected and enqueued", i)
+            except Exception as e:
                 # Keep going; remaining connections may still succeed
-                pass
+                log.error("pool.start: client idx=%d connect failed: %s", i, e)
             # Mark ready as soon as threshold met
             ready_now = sum(1 for c in self.clients if c.ready)
             if ready_now >= READY_NEED:
+                if not self._ready.is_set():
+                    log.info("pool.start: ready threshold met (ready=%d / size=%d)", ready_now, self.size)
                 self._ready.set()
             # Small delay between spawns to smooth CPU usage
             if WARMUP_DELAY_MS > 0 and i + 1 < self.size:
@@ -437,28 +450,33 @@ class QPool:
 
     @asynccontextmanager
     async def acquire(self):
+        log.debug("pool.acquire: waiting for available client ...")
         idx = await self.available.get()
         cli = self.clients[idx]
         try:
+            log.debug("pool.acquire: got idx=%d, acquiring lock ...", idx)
             await cli.lock.acquire()
             try:
+                log.debug("pool.acquire: lock acquired idx=%d", idx)
                 yield cli
             finally:
                 cli.lock.release()
+                log.debug("pool.acquire: lock released idx=%d", idx)
         except Exception:
             # If something bad happened before yielding, mark unhealthy & try to reconnect
             cli.ready = False
             try:
                 await cli.close()
             except Exception:
-                pass
+                log.exception("pool.acquire: close failed idx=%d", idx)
             try:
                 await cli.connect()
             except Exception:
-                pass
+                log.exception("pool.acquire: reconnect failed idx=%d", idx)
         finally:
             # Return index to the pool regardless; caller will retry on error response
             await self.available.put(idx)
+            log.debug("pool.acquire: idx=%d returned to queue", idx)
 
     async def wait_ready(self, timeout: float = 30.0):
         try:
@@ -533,12 +551,14 @@ async def _startup():
     TASK_DOC = _read_task_doc(TASK_DOC_BUDGET)
     asyncio.create_task(pool.start())
     try:
+        log.info("startup: waiting pool ready (timeout=30s) ...")
         await pool.wait_ready(30.0)  # 增加超时时间到30秒
-        print("Pool initialized successfully")
+        ready, size, avail = pool.stats()
+        log.info("startup: pool ready=%d size=%d avail=%d", ready, size, avail)
     except asyncio.TimeoutError:
-        print("Warning: Pool initialization timeout, but continuing...")
+        log.warning("startup: pool initialization timeout, continue anyway")
     except Exception as e:
-        print(f"Warning: Pool initialization error: {e}, but continuing...")
+        log.exception("startup: pool initialization error, continue anyway")
 
 @app.get("/healthz")
 async def healthz():
@@ -555,25 +575,33 @@ async def call(req: CallReq):
     # Build prompt (task instructions + alert JSON + SOP; always included)
     try:
         prompt, sop_id = build_prompt_and_ids(req.alert, req.prompt)
+        log.info("call: built prompt (sop_id=%s, alert_keys=%s, prompt_len=%d)",
+                 sop_id, list(req.alert.keys())[:6], len(prompt))
     except Exception as e:
+        log.exception("call: build prompt failed")
         raise HTTPException(status_code=400, detail=f"build prompt failed: {e}")
 
     try:
         async with pool.acquire() as cli:
             if sop_id:
+                log.debug("call: loading conversation if exists (sop_id=%s)", sop_id)
                 await cli.load_if_exists(sop_id)
 
+            log.info("call: executing prompt (timeout=%ss)", int(REQUEST_TIMEOUT))
             out = await asyncio.wait_for(cli.exec_collect(prompt), timeout=REQUEST_TIMEOUT)
             cleaned = clean_text(out)
-
+            log.info("call: got response (len_raw=%d, len_cleaned=%d)", len(out), len(cleaned))
             if is_valid_json_result(cleaned) and sop_id:
+                log.info("call: valid JSON result detected; compact+save (sop_id=%s)", sop_id)
                 await cli.compact_and_save(sop_id)
 
             return CallResp(ok=True, answer=cleaned, sop_id=sop_id)
 
     except asyncio.TimeoutError:
+        log.warning("call: request timeout after %ss", int(REQUEST_TIMEOUT))
         raise HTTPException(status_code=504, detail="request timeout")
     except Exception as e:
+        log.exception("call: exception during execution")
         return CallResp(ok=False, error=str(e), sop_id=sop_id)
 
 
