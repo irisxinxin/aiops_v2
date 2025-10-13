@@ -66,6 +66,7 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "300"))  # seconds
 HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
 WARMUP_DELAY_MS = int(os.getenv("WARMUP_DELAY_MS", "500"))  # sequential warmup delay between connections
+WARMUP_PAUSE_SEC = int(os.getenv("WARMUP_PAUSE_SEC", "30"))  # pause before first /help to wait MCP loading
 
 # Logging config
 LOG_LEVEL = os.getenv("QPROXY_LOG_LEVEL", "INFO").upper()
@@ -363,9 +364,12 @@ class QClient:
 
     async def connect(self):
         self.client = await self._ctx.__aenter__()
-        # Warmup: run a lightweight command to ensure Q CLI is responsive
+        # Warmup: wait for MCP/plugins to load, then run /help to ensure ready
         try:
-            await asyncio.wait_for(self.exec_collect("/help"), timeout=15)
+            if WARMUP_PAUSE_SEC > 0:
+                log.info("client.connect: pause %ds before /help warmup", WARMUP_PAUSE_SEC)
+                await asyncio.sleep(WARMUP_PAUSE_SEC)
+            await asyncio.wait_for(self.exec_collect("/help"), timeout=30)
             self.ready = True
         except Exception:
             self.ready = False
@@ -431,15 +435,8 @@ class QPool:
         for i, cli in enumerate(self.clients):
             try:
                 log.info("pool.start: connecting client idx=%d host=%s port=%d", i, Q_HOST, Q_PORT)
-                # up to 3 attempts to get a healthy session
-                healthy = False
-                for _ in range(3):
-                    await cli.connect()
-                    if cli.ready:
-                        healthy = True
-                        break
-                    await asyncio.sleep(1)
-                if healthy:
+                await cli.connect()
+                if cli.ready:
                     await self.available.put(i)
                     log.info("pool.start: client idx=%d ready and enqueued", i)
                 else:
