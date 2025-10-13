@@ -12,7 +12,7 @@ ExecStart=/usr/bin/bash -lc 'bash scripts/start_qproxy.sh'
 # 重启与资源限制
 Restart=always
 RestartSec=3
-MemoryMax=2G
+MemoryMax=1G
 
 # 运行环境（可按需追加）
 Environment=PYTHONUNBUFFERED=1
