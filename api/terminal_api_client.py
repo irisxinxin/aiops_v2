@@ -265,13 +265,13 @@ class TerminalAPIClient:
         self._set_state(TerminalBusinessState.UNAVAILABLE)
         await self._connection_manager.disconnect()
     
-    async def execute_command_stream(self, command: str, silence_timeout: float = 30.0) -> AsyncIterator[Dict[str, Any]]:
+    async def execute_command_stream(self, command: str, silence_timeout: float = 10.0) -> AsyncIterator[Dict[str, Any]]:
         """
         执行命令并返回流式输出（异步迭代器）- 基于统一数据流架构
         
         Args:
             command: 要执行的命令
-            silence_timeout: 静默超时时间（秒）- 只有完全无响应时才超时
+            silence_timeout: 静默超时时间（秒）- API调用超时，默认10秒
             
         Yields:
             Dict: 每个流式输出块，统一的API格式

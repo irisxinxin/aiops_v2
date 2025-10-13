@@ -1,0 +1,6 @@
+{
+  "message": "Hello, what is 2+2?",
+  "alert": {
+    "alertname": "simple_test"
+  }
+}

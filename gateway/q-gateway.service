@@ -1,0 +1,29 @@
+[Unit]
+Description=Q Gateway Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/huixin/aiops_v2
+Environment=PATH=/home/ubuntu/huixin/aiops_v2/.venv/bin:/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/ubuntu
+Environment=SOP_DIR=/home/ubuntu/huixin/aiops_v2/sop
+Environment=TASK_DOC_PATH=/home/ubuntu/huixin/aiops_v2/task_instructions.md
+Environment=QTTY_PORT=7682
+Environment=HTTP_PORT=8081
+ExecStartPre=/bin/bash -c 'pkill -f "uvicorn gateway.app:app" || true; pkill -f "ttyd.*gateway" || true; sleep 2'
+ExecStart=/bin/bash gateway/start.sh
+ExecStop=/bin/bash -c 'pkill -f "uvicorn gateway.app:app" || true; pkill -f "ttyd.*gateway" || true'
+Restart=always
+RestartSec=5
+
+# CPU and Memory Protection
+CPUQuota=80%
+MemoryMax=1G
+MemoryHigh=800M
+TasksMax=100
+
+[Install]
+WantedBy=multi-user.target

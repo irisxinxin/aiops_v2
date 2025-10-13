@@ -10,8 +10,8 @@ services:
     environment:
       - HTTP_PORT=8081
       - QTTY_PORT=7682
-      - SOP_DIR=/app/aiops/sop
-      - TASK_DOC_PATH=/app/aiops/task_instructions.md
+      - SOP_DIR=/app/sop
+      - TASK_DOC_PATH=/app/task_instructions.md
       - TASK_DOC_BUDGET=131072
     volumes:
       - ../q-sessions:/srv/q-sessions

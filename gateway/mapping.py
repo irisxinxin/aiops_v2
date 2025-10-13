@@ -6,12 +6,17 @@ def build_incident_key_from_alert(alert: dict) -> str:
     """从 alert 生成标准 incident_key: service_category_severity_region[_name][_group]
     并追加 10位 sha1 后缀避免冲突。
     """
+    # 从metadata中获取更准确的信息
+    metadata = alert.get("metadata", {})
+    
     service = str(alert.get("service", "")).strip()
     category = str(alert.get("category", "")).strip()
     severity = str(alert.get("severity", "")).strip()
     region = str(alert.get("region", "")).strip()
-    name = str(alert.get("alertname", "") or alert.get("name", "")).strip()
-    group_id = str(alert.get("group_id", "") or alert.get("group", "")).strip()
+    
+    # 优先从metadata获取alertname
+    name = str(metadata.get("alertname", "") or alert.get("alertname", "") or alert.get("name", "")).strip()
+    group_id = str(metadata.get("group_id", "") or alert.get("group_id", "") or alert.get("group", "")).strip()
 
     base = "_".join([x for x in [service, category, severity, region] if x])
     if name:

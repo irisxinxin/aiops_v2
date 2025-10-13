@@ -1,0 +1,34 @@
+[Unit]
+Description=AIOps Q Proxy Optimized (FastAPI + ttyd stateless)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/huixin/aiops_v2
+ExecStart=/usr/bin/bash -lc 'bash scripts/start_qproxy_optimized.sh'
+
+Restart=always
+RestartSec=2
+MemoryMax=512M
+CPUQuota=80%
+TasksMax=256
+
+Environment=PYTHONUNBUFFERED=1
+Environment=TERM=dumb
+Environment=NO_COLOR=1
+Environment=CLICOLOR=0
+Environment=QPROXY_LOG_LEVEL=INFO
+Environment=QPROXY_LOG_PAYLOAD=1
+Environment=Q_TRUST_ALL_TOOLS=1
+Environment=Q_AUTO_APPROVE=1
+Environment=Q_NO_INTERACTION=1
+Environment=Q_DISABLE_TUI=1
+Environment=Q_BATCH_MODE=1
+Environment=Q_NON_INTERACTIVE=1
+Environment=REQUEST_TIMEOUT=8
+Environment=HTTP_PORT=8080
+Environment=Q_PORT=7682
+
+[Install]
+WantedBy=multi-user.target

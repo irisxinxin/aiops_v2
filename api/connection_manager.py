@@ -31,7 +31,7 @@ class ConnectionManager:
     def __init__(self, host: str = "localhost", port: int = 7681,
                  username: str = "demo", password: str = "password123",
                  use_ssl: bool = False, terminal_type: str = "bash",
-                 silence_time: float = 3.0, query: str | None = None):
+                 silence_time: float = 45.0, query: str | None = None):
         """
         初始化连接管理器
 
@@ -42,7 +42,7 @@ class ConnectionManager:
             password: 认证密码
             use_ssl: 是否使用SSL
             terminal_type: 终端类型 (bash, qcli, python)
-            silence_time: 静默时间（秒）- 无新消息时认为初始化结束
+            silence_time: 静默时间（秒）- 无新消息时认为初始化结束（默认45秒，适合MCP工具初始化）
         """
         self.host = host
         self.port = port

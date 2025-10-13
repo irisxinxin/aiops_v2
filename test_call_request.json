@@ -1,0 +1,8 @@
+{
+  "message": "What is the current time?",
+  "alert": {
+    "alertname": "test_alert",
+    "severity": "info",
+    "status": "firing"
+  }
+}
