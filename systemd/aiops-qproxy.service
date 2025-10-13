@@ -1,0 +1,26 @@
+[Unit]
+Description=AIOps Q Proxy (FastAPI + ttyd)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 请将 WorkingDirectory 修改为部署机器上的仓库绝对路径
+WorkingDirectory=/opt/aiops_v2
+ExecStart=/usr/bin/bash -lc 'bash scripts/start_qproxy.sh'
+
+# 重启与资源限制
+Restart=always
+RestartSec=3
+MemoryMax=2G
+
+# 运行环境（可按需追加）
+Environment=PYTHONUNBUFFERED=1
+
+# 如需以非 root 运行，取消注释并设置为已有用户
+#User=aiops
+
+[Install]
+WantedBy=multi-user.target
+
+
