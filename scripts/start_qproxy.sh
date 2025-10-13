@@ -16,6 +16,9 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || echo pyth
 AUTO_SETUP="${AUTO_SETUP:-1}"       # 1: auto install deps; 0: skip
 USE_VENV="${USE_VENV:-1}"           # 1: use .venv; 0: install --user
 
+# Ensure local repo modules (e.g., ./api) are importable
+export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
 # ---- Config (env-overridable) ----
 export Q_HOST="${Q_HOST:-127.0.0.1}"
 export Q_PORT="${Q_PORT:-7682}"
@@ -56,10 +59,8 @@ if [ "$AUTO_SETUP" = "1" ]; then
   "$PYTHON_BIN" -m ensurepip -U >/dev/null 2>&1 || true
   "$PYTHON_BIN" -m pip install -U pip >/dev/null
   # terminal-api-for-qcli requires git for VCS install
-  if ! command -v git >/dev/null 2>&1; then
-    echo "[WARN] git is not installed; VCS install may fail. Please install git if errors occur."
-  fi
-  "$PYTHON_BIN" -m pip install fastapi "uvicorn[standard]" "git+https://github.com/aleck31/terminal-api-for-qcli@master"
+  # 注意：本仓库已包含本地 api/ 实现，无需从 GitHub 安装该库
+  "$PYTHON_BIN" -m pip install fastapi "uvicorn[standard]"
 fi
 
 # ---- Check ttyd availability ----
