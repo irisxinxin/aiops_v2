@@ -151,7 +151,9 @@ async def ask(req: Request):
     prompt = build_prompt(text, sop_id, alert)
 
     # 构造客户端（每次请求新建，稳定但 QPS 较低）
-    client = TerminalAPIClient(host=QTTY_HOST, port=QTTY_PORT, terminal_type=TerminalType.QCLI)
+    # 将 sop_id 作为 ttyd 的 URL 参数传给 q_entry.sh
+    ttyd_query = (f"arg={sop_id}" if sop_id else None)
+    client = TerminalAPIClient(host=QTTY_HOST, port=QTTY_PORT, terminal_type=TerminalType.QCLI, ttyd_query=ttyd_query)
 
     async def gen():
         try:

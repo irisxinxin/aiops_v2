@@ -39,7 +39,7 @@ class TtydWebSocketClient:
 
     def __init__(self, host: str = "localhost", port: int = 7681,
                  username: str = "demo", password: str = "password123",
-                 use_ssl: bool = False):
+                 use_ssl: bool = False, query: str | None = None):
         """
         初始化客户端
 
@@ -55,6 +55,7 @@ class TtydWebSocketClient:
         self.username = username
         self.password = password
         self.use_ssl = use_ssl
+        self.query = query
 
         # WebSocket连接
         self.ws_connection: Optional[ClientConnection] = None
@@ -96,7 +97,10 @@ class TtydWebSocketClient:
     def url(self) -> str:
         """获取WebSocket URL"""
         protocol = "wss" if self.use_ssl else "ws"
-        return f"{protocol}://{self.host}:{self.port}/ws"
+        base = f"{protocol}://{self.host}:{self.port}/ws"
+        if self.query:
+            return base + ("?" + self.query)
+        return base
 
     @property
     def is_protocol_ready(self) -> bool:

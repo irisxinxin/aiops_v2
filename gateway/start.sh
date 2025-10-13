@@ -19,7 +19,7 @@ kill_port "$QTTY_PORT" || true
 kill_port "$HTTP_PORT" || true
 
 # Start ttyd (loopback only, no auth, heartbeat)
-nohup ttyd --ping-interval 55 -p "$QTTY_PORT" --writable --interface 127.0.0.1 q \
+nohup ttyd --ping-interval 55 -p "$QTTY_PORT" --writable --interface 127.0.0.1 bash gateway/q_entry.sh \
   > ./logs/ttyd.gateway.out 2>&1 & echo $! > ./logs/ttyd.gateway.pid
 
 # Start FastAPI app

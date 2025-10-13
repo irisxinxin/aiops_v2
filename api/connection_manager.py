@@ -31,7 +31,7 @@ class ConnectionManager:
     def __init__(self, host: str = "localhost", port: int = 7681,
                  username: str = "demo", password: str = "password123",
                  use_ssl: bool = False, terminal_type: str = "bash",
-                 silence_time: float = 3.0):
+                 silence_time: float = 3.0, query: str | None = None):
         """
         初始化连接管理器
 
@@ -65,7 +65,7 @@ class ConnectionManager:
         self._client = TtydWebSocketClient(
             host=host, port=port,
             username=username, password=password,
-            use_ssl=use_ssl
+            use_ssl=use_ssl, query=query
         )
 
         # 设置协议状态变化回调

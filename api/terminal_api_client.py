@@ -30,7 +30,7 @@ class TerminalAPIClient:
     def __init__(self, host: str = "localhost", port: int = 7681,
                  username: str = "demo", password: str = "password123",
                  use_ssl: bool = False, terminal_type: TerminalType = TerminalType.GENERIC,
-                 format_output: bool = True):
+                 format_output: bool = True, ttyd_query: str | None = None):
         """
         初始化终端API客户端
         
@@ -51,7 +51,7 @@ class TerminalAPIClient:
         # 初始化组件
         self._connection_manager = ConnectionManager(
             host=host, port=port, username=username, password=password,
-            use_ssl=use_ssl, terminal_type=terminal_type.value
+            use_ssl=use_ssl, terminal_type=terminal_type.value, query=ttyd_query
         )
         
         self._command_executor = CommandExecutor(
