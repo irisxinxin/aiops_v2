@@ -5,6 +5,7 @@ Message Processor - 统一数据流架构
 """
 
 import logging
+import re
 import time
 from typing import Optional
 
@@ -13,6 +14,28 @@ from .utils.ansi_formatter import ansi_formatter
 
 logger = logging.getLogger(__name__)
 
+
+# 与 qproxy 同步的 TUI 清理实现
+ANSI_RE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+ALT_SCREEN_RE = re.compile(r'\x1b\[\?1049[hl]')
+OSC_LINK_RE = re.compile(r'\x1b]8;;.*?\x07(.*?)\x1b]8;;\x07', re.DOTALL)
+
+def _sanitize_tui(s: str) -> str:
+    parts = []
+    for line in s.split('\n'):
+        if '\r' in line:
+            line = line.split('\r')[-1]
+        parts.append(line)
+    s = '\n'.join(parts)
+
+    while '\b' in s:
+        s = re.sub('.\x08', '', s)
+
+    s = ALT_SCREEN_RE.sub('', s)
+    s = OSC_LINK_RE.sub(r'\1', s)
+    s = ANSI_RE.sub('', s)
+    s = re.sub(r'\n{3,}', '\n\n', s).strip()
+    return s
 
 class MessageProcessor:
     """统一的输出处理器 - 实现统一数据流架构"""
@@ -45,6 +68,12 @@ class MessageProcessor:
         # 使用传入的终端类型或实例设置
         current_terminal_type = terminal_type or self.terminal_type
         
+        # 预清理：强力去除 TUI/ANSI 控制符，避免乱码上浮到上层
+        try:
+            raw_message = _sanitize_tui(raw_message)
+        except Exception:
+            pass
+
         try:
             if current_terminal_type == TerminalType.QCLI:
                 return self._process_qcli_message(raw_message, command)
