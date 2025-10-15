@@ -194,6 +194,25 @@ def _purge_session_dir(sop_dir: Path) -> tuple[bool, str]:
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
 
+
+def _append_incident_sop_mapping(incident_key: Optional[str], sop_id: str) -> None:
+    """将 incident_key 与 sop_id 的映射追加记录到 sop/incident_sop_map.jsonl（仅记录用途）。"""
+    try:
+        if not incident_key:
+            return
+        proj_dir = Path(__file__).resolve().parents[1]
+        map_file = proj_dir / "sop" / "incident_sop_map.jsonl"
+        map_file.parent.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": int(time.time()),
+            "incident_key": incident_key,
+            "sop_id": sop_id,
+        }
+        with map_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
         timeout = SLASH_TIMEOUT
@@ -459,6 +478,15 @@ async def ask_json(request: Request):
 
     sop_id = _resolve_sop_id(body)
     (SESSION_ROOT / sop_id).mkdir(parents=True, exist_ok=True)
+
+    # 记录 incident_key 与 sop_id 的映射（若存在 incident_key）
+    ik = str(body.get("incident_key", "")).strip() or None
+    if not ik and isinstance(body.get("alert"), dict):
+        try:
+            ik = build_incident_key_from_alert(body["alert"]) or None
+        except Exception:
+            ik = None
+    _append_incident_sop_mapping(ik, sop_id)
 
     attempts = []
     sop_used = sop_id
