@@ -16,6 +16,12 @@ pkill -f "uvicorn gateway.app:app" || true
 pkill -f "ttyd.*gateway/q_entry.sh" || true
 sleep 2
 
+# 清空会话目录（可选）
+if [[ "${CLEAR_SESSIONS:-0}" == "1" ]]; then
+  echo "Clearing /srv/q-sessions ..."
+  sudo rm -rf /srv/q-sessions/* || true
+fi
+
 # 启动 ttyd 服务 (Q CLI 终端)
 echo "Starting ttyd service..."
 ttyd --ping-interval 55 -p 7682 --writable --interface 127.0.0.1 bash gateway/q_entry.sh &

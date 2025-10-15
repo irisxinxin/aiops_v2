@@ -1,4 +1,6 @@
 import os, sys, json, asyncio, time, re, subprocess
+from asyncio import Lock
+from typing import List, Tuple
 from typing import Any, Dict, Optional
 from pathlib import Path
 
@@ -15,7 +17,8 @@ from gateway.mapping import build_incident_key_from_alert, sop_id_from_incident_
 APP_NAME = os.getenv("APP_NAME", "q-gateway-json")
 HOST = os.getenv("QTTY_HOST", "127.0.0.1")
 PORT = int(os.getenv("QTTY_PORT", "7682"))
-SESSION_ROOT = Path(os.getenv("SESSION_ROOT", "./q-sessions"))
+# 统一使用 /srv/q-sessions，保持与 q_entry.sh 一致
+SESSION_ROOT = Path(os.getenv("SESSION_ROOT", "/srv/q-sessions"))
 SOP_DIR = Path(os.getenv("SOP_DIR", "./sop"))
 TASK_DOC_PATH = Path(os.getenv("TASK_DOC_PATH", "./task_instructions.md"))
 TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))
@@ -107,24 +110,165 @@ async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict
     except Exception as e:
         return {"ok": False, "code": 1, "stdout": "", "stderr": str(e)}
 
+QTTY_MAX_CONN = int(os.getenv("QTTY_MAX_CONN", "20"))
+_GLOBAL_CONN = 0
+_GLOBAL_LOCK: Lock = Lock()
+
+
+class _PooledClient:
+    def __init__(self, client: TerminalAPIClient):
+        self.client = client
+        self.lock: Lock = Lock()
+        self.last_used: float = 0.0
+
+class _QPool:
+    def __init__(self, sop_id: str, size: int = 1):
+        self.sop_id = sop_id
+        self.size = size
+        self._clients: List[_PooledClient] = []
+        self._init_lock: Lock = Lock()
+
+    async def _ensure_min_clients(self):
+        async with self._init_lock:
+            while len(self._clients) < self.size:
+                # 全局连接上限控制
+                acquired_global = False
+                for _ in range(300):  # 最长约3s等待全局额度
+                    async with _GLOBAL_LOCK:
+                        global _GLOBAL_CONN
+                        if _GLOBAL_CONN < QTTY_MAX_CONN:
+                            _GLOBAL_CONN += 1
+                            acquired_global = True
+                            break
+                    await asyncio.sleep(0.01)
+
+                if not acquired_global:
+                    # 全局连接已达上限，尝试淘汰一个空闲连接
+                    evicted = await _evict_one_idle()
+                    if not evicted:
+                        # 无可淘汰连接，放弃创建
+                        break
+                    # 淘汰成功后继续重试一次获取额度
+                    async with _GLOBAL_LOCK:
+                        global _GLOBAL_CONN
+                        if _GLOBAL_CONN < QTTY_MAX_CONN:
+                            _GLOBAL_CONN += 1
+                            acquired_global = True
+                        else:
+                            # 极端情况下仍不可用
+                            break
+
+                try:
+                    cli = TerminalAPIClient(
+                        host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
+                        ttyd_query=f"arg={self.sop_id}"
+                    )
+                    ok = await cli.initialize()
+                    if ok:
+                        self._clients.append(_PooledClient(cli))
+                    else:
+                        # 初始化失败，回收全局名额
+                        async with _GLOBAL_LOCK:
+                            _GLOBAL_CONN -= 1
+                        break
+                except Exception:
+                    # 异常也需回收名额
+                    async with _GLOBAL_LOCK:
+                        _GLOBAL_CONN -= 1
+                    break
+
+    async def acquire(self) -> Tuple[_PooledClient, int]:
+        await self._ensure_min_clients()
+        # 简单轮询：寻找空闲连接
+        # 若都繁忙，等待任一连接释放
+        waited = 0
+        while True:
+            for idx, pc in enumerate(self._clients):
+                if not pc.lock.locked():
+                    await pc.lock.acquire()
+                    pc.last_used = time.time()
+                    return pc, idx
+            await asyncio.sleep(0.01)
+            waited += 1
+            if waited > 30000 and not self._clients:
+                # 等待超时且无可用连接
+                raise HTTPException(503, "no available connection for sop_id")
+
+    async def release(self, pc: _PooledClient):
+        if pc.lock.locked():
+            pc.lock.release()
+            # 连接保持，不回收；若未来需要关闭，可在此实现空闲回收并减少 _GLOBAL_CONN
+
+
+async def _evict_one_idle() -> bool:
+    """在所有 sop 池中淘汰一个空闲连接（LRU），释放全局额度。"""
+    # 选择最久未使用且未加锁的连接
+    candidate: Tuple[str, int, _PooledClient] | None = None
+    oldest = float('inf')
+    for sop, pool in list(_SOP_POOLS.items()):
+        for idx, pc in enumerate(pool._clients):
+            if pc.lock.locked():
+                continue
+            lu = pc.last_used or 0.0
+            if lu < oldest:
+                oldest = lu
+                candidate = (sop, idx, pc)
+    if not candidate:
+        return False
+    sop, idx, pc = candidate
+    try:
+        # 关闭并移除
+        try:
+            await pc.client.shutdown()
+        except Exception:
+            pass
+        pool = _SOP_POOLS.get(sop)
+        if pool:
+            try:
+                pool._clients.pop(idx)
+            except Exception:
+                pass
+            # 如果该 sop 已无连接，删除池条目
+            if not pool._clients:
+                _SOP_POOLS.pop(sop, None)
+        # 回收全局额度
+        async with _GLOBAL_LOCK:
+            global _GLOBAL_CONN
+            if _GLOBAL_CONN > 0:
+                _GLOBAL_CONN -= 1
+        return True
+    except Exception:
+        return False
+
+_SOP_POOLS: Dict[str, _QPool] = {}
+
+def _get_pool(sop_id: str) -> _QPool:
+    if sop_id not in _SOP_POOLS:
+        _SOP_POOLS[sop_id] = _QPool(sop_id, size=3)
+    return _SOP_POOLS[sop_id]
+
 async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
         timeout = Q_OVERALL_TIMEOUT
-    out_chunks = []
-    events = []
-    async def _inner():
-        ttyd_query = f"arg={sop_id}" if sop_id else None
-        async with TerminalAPIClient(host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
-                                     ttyd_query=ttyd_query) as client:
-            async for chunk in client.execute_command_stream(text):
+    out_chunks: List[str] = []
+    events: List[Dict[str, Any]] = []
+
+    pool = _get_pool(sop_id)
+    pc: _PooledClient
+    try:
+        pc, _ = await pool.acquire()
+
+        async def _inner():
+            # 已持久连接，直接执行
+            async for chunk in pc.client.execute_command_stream(text):
                 t = chunk.get("type")
                 if t == "content":
-                    out_chunks.append(chunk.get("content",""))
-                elif t in ("notification","tool","error"):
+                    out_chunks.append(chunk.get("content", ""))
+                elif t in ("notification", "tool", "error"):
                     events.append(chunk)
                 elif t == "complete":
                     break
-    try:
+
         await asyncio.wait_for(_inner(), timeout=timeout)
         ok = True
         err = ""
@@ -134,6 +278,13 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
     except Exception as e:
         ok = False
         err = str(e)
+    finally:
+        # 释放连接
+        try:
+            await pool.release(pc)
+        except Exception:
+            pass
+
     return {"ok": ok, "output": "".join(out_chunks), "events": events, "error": err}
 
 def _improve_json_readability(json_str: str) -> str:
