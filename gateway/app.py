@@ -76,7 +76,7 @@ def _load_sop_text(sop_id: str) -> str:
 
 from typing import Optional
 
-def _build_prompt(body: Dict[str, Any], sop_id: str, allow_tools: bool = True) -> str:
+def _build_prompt(body: Dict[str, Any], sop_id: str, allow_tools: bool = True, boundary_id: Optional[str] = None) -> str:
     parts = []
 
     task = _read_task_doc()
@@ -98,6 +98,9 @@ Return ONLY one JSON object (no extra prose) with:
 incident_key, sop_id, severity, classification, impact, hypothesis,
 runbook_steps[], commands[], next_action""")
 
+    if boundary_id:
+        parts.append(f"## BOUNDARY\nBOUNDARY_ID: {boundary_id}")
+
     if ALERT_JSON_PRETTY and isinstance(body.get("alert"), dict):
         parts.append("## ALERT JSON\n" + json.dumps(body["alert"], ensure_ascii=False, indent=2))
 
@@ -117,24 +120,17 @@ def _log_prompt(sop_id: str, prompt: str) -> None:
     except Exception:
         pass
 
-# 简单判定：输出中包含工具未就绪/仍加载等提示
-_TOOL_UNAVAILABLE_PATTERNS = [
-    r"Servers\s+still\s+loading",
-    r"tools?\s+.*not\s+available",
-    r"tool\s+.*unavailable",
-    r"initiali[sz]ing\s+MCP",
-    r"try\s+again\s+later",
-    r"WouldBlock",
-    r"Resource\s+temporarily\s+unavailable",
-]
-_TOOL_UNAVAIL_RE = re.compile("|".join(_TOOL_UNAVAILABLE_PATTERNS), re.IGNORECASE)
+# 工具未就绪判定（扩展语义覆盖）
+_TOOL_FAIL_PAT = re.compile(
+    r"(mcp (server|tool)s?.{0,40}(not available|were ?n’t available|weren't available)|"
+    r"still loading|not (yet )?ready|initiali[sz]ation failed|"
+    r"failed to (call|invoke) tool|no tool called due to init|"
+    r"waiting for (mcp|server) init)",
+    re.IGNORECASE
+)
 
-def _looks_like_tool_unavailable(output: str) -> bool:
-    if not output:
-        return False
-    if _TOOL_UNAVAIL_RE.search(output) is not None:
-        return True
-    return False
+def _looks_like_tool_unavailable(text: str) -> bool:
+    return bool(_TOOL_FAIL_PAT.search(text or ""))
 
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
@@ -403,6 +399,7 @@ async def ask_json(request: Request):
     (SESSION_ROOT / sop_id).mkdir(parents=True, exist_ok=True)
 
     attempts = []
+    sop_used = sop_id
 
     # 1) 首次：允许工具
     prompt = _build_prompt(body, sop_id, allow_tools=True)
@@ -430,15 +427,38 @@ async def ask_json(request: Request):
     fell_back_offline = False
     if OFFLINE_FALLBACK and (not res["ok"] or _looks_like_tool_unavailable(res.get("output", ""))):
         fell_back_offline = True
-        prompt_off = _build_prompt(body, sop_id, allow_tools=False)
+
+        # 生成 alert_id，作为边界标记
+        def _alert_id(alert: dict) -> str:
+            try:
+                blob = json.dumps(alert, ensure_ascii=False, sort_keys=True)
+            except Exception:
+                blob = str(alert)
+            import hashlib
+            return hashlib.sha1(blob.encode("utf-8", "ignore")).hexdigest()[:12]
+
+        aid = _alert_id(body.get("alert", {})) if isinstance(body.get("alert"), dict) else None
+
+        # 离线兜底：禁工具 + 边界提示，且使用“冷目录”避免历史影响
+        prompt_off = _build_prompt(body, sop_id, allow_tools=False, boundary_id=aid)
         _log_prompt(sop_id, prompt_off)
+        sop_id_off = f"{sop_id}__offline"
+        (SESSION_ROOT / sop_id_off).mkdir(parents=True, exist_ok=True)
+        sop_used = sop_id_off
+
         t2 = time.time()
-        res = await _run_q_collect(sop_id, prompt_off, timeout=Q_OVERALL_TIMEOUT)
-        attempts.append({"allow_tools": False, "took_ms": int((time.time()-t2)*1000), "ok": res["ok"]})
+        res = await _run_q_collect(sop_id_off, prompt_off, timeout=Q_OVERALL_TIMEOUT)
+        attempts.append({
+            "allow_tools": False,
+            "cold_dir": True,
+            "took_ms": int((time.time()-t2)*1000),
+            "ok": res["ok"]
+        })
 
     out = {
         "ok": res["ok"],
         "sop_id": sop_id,
+        "sop_used": sop_used,
         "output": res.get("output", ""),
         "events": res.get("events", []),
         "error": res.get("error", ""),
