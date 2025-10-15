@@ -81,6 +81,20 @@ def _build_prompt(body: Dict[str, Any], sop_id: str) -> str:
         parts.append("## ALERT JSON\n" + json.dumps(body["alert"], ensure_ascii=False, indent=2))
     return "\n\n".join(parts).strip()
 
+def _log_prompt(sop_id: str, prompt: str) -> None:
+    try:
+        proj_dir = Path(__file__).resolve().parents[1]
+        log_dir = proj_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"prompts_{sop_id}.log"
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(f"\n===== {ts} sop_id={sop_id} =====\n")
+            f.write(prompt)
+            f.write("\n")
+    except Exception:
+        pass
+
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
         timeout = SLASH_TIMEOUT
@@ -370,6 +384,7 @@ async def ask_json(request: Request):
 
     # 构建 Prompt（仅 TASK/SOP/ALERT）并请求
     prompt = _build_prompt(body, sop_id)
+    _log_prompt(sop_id, prompt)
     t0 = time.time()
     res = await _run_q_collect(sop_id, prompt)
     took_ms = int((time.time() - t0) * 1000)
