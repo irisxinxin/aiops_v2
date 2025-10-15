@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 从 URL 参数获取 sop_id (ttyd 会将 ?arg=value 作为第一个参数传递)
-# 如果没有参数，使用 default
-SOP_ID="${1:-default}"
+# 获取 sop_id：优先 argv，其次 QUERY_STRING 中的 arg=，最后 default
+SOP_ID="${1:-}"
+if [ -z "$SOP_ID" ] && [ -n "${QUERY_STRING:-}" ]; then
+  ARG_PART="$(printf '%s' "$QUERY_STRING" | tr '&' '\n' | grep -m1 '^arg=')" || true
+  SOP_ID="${ARG_PART#arg=}"
+fi
+SOP_ID="${SOP_ID:-default}"
 
-SESSION_DIR="/home/ubuntu/huixin/aiops_v2/q-sessions/${SOP_ID}"
+# 统一使用仓库下的 q-sessions/<sop_id>
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+SESSION_DIR="${PROJECT_DIR}/q-sessions/${SOP_ID}"
 mkdir -p "$SESSION_DIR"
 cd "$SESSION_DIR"
 
-# 选择 Q 可执行文件
+# 选择 Q 可执行文件（可被环境 Q_CMD 覆盖）
 Q_CMD="${Q_CMD:-}"
 if [ -z "$Q_CMD" ]; then
   if [ -x "/home/ubuntu/.local/bin/q" ]; then
@@ -24,6 +31,6 @@ if [ -z "$Q_CMD" ]; then
   fi
 fi
 
-# 进入会话（可保存/加载，带工具信任）
+# 启动会话（工具信任，自动续会话）
 exec "$Q_CMD" chat --trust-all-tools --resume
 

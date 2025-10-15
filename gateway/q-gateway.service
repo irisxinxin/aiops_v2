@@ -14,7 +14,7 @@ Environment=PATH=/home/ubuntu/huixin/aiops_v2/.venv/bin:/usr/local/bin:/usr/bin:
 Environment=PYTHONPATH=/home/ubuntu/huixin/aiops_v2
 Environment=SOP_DIR=/home/ubuntu/huixin/aiops_v2/sop
 Environment=TASK_DOC_PATH=/home/ubuntu/huixin/aiops_v2/task_instructions.md
-Environment=SESSION_ROOT=/srv/q-sessions
+Environment=SESSION_ROOT=/home/ubuntu/huixin/aiops_v2/q-sessions
 Environment=QTTY_HOST=127.0.0.1
 Environment=QTTY_PORT=7682
 Environment=QTTY_PING=55
@@ -51,7 +51,7 @@ ProtectSystem=strict
 ProtectHome=read-only
 # 允许写入工作目录与会话目录
 ReadWritePaths=/home/ubuntu/huixin/aiops_v2
-ReadWritePaths=/srv/q-sessions
+ReadWritePaths=/home/ubuntu/huixin/aiops_v2/q-sessions
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

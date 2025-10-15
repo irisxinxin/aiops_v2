@@ -17,8 +17,8 @@ from gateway.mapping import build_incident_key_from_alert, sop_id_from_incident_
 APP_NAME = os.getenv("APP_NAME", "q-gateway-json")
 HOST = os.getenv("QTTY_HOST", "127.0.0.1")
 PORT = int(os.getenv("QTTY_PORT", "7682"))
-# 统一使用 /srv/q-sessions，保持与 q_entry.sh 一致
-SESSION_ROOT = Path(os.getenv("SESSION_ROOT", "/srv/q-sessions"))
+# 统一使用仓库下的 q-sessions 目录
+SESSION_ROOT = Path(os.getenv("SESSION_ROOT", str(Path(__file__).resolve().parents[1] / "q-sessions")))
 SOP_DIR = Path(os.getenv("SOP_DIR", "./sop"))
 TASK_DOC_PATH = Path(os.getenv("TASK_DOC_PATH", "./task_instructions.md"))
 TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))

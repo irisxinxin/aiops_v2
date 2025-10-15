@@ -18,8 +18,8 @@ sleep 2
 
 # 清空会话目录（可选）
 if [[ "${CLEAR_SESSIONS:-0}" == "1" ]]; then
-  echo "Clearing /srv/q-sessions ..."
-  sudo rm -rf /srv/q-sessions/* || true
+  echo "Clearing ./q-sessions ..."
+  rm -rf ./q-sessions/* || true
 fi
 
 # 启动 ttyd 服务 (Q CLI 终端)
