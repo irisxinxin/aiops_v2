@@ -66,7 +66,7 @@ def _load_sop_text(sop_id: str) -> str:
             continue
     return ""
 
-def _build_prompt(body: Dict[str, Any], sop_id: str, user_text: str) -> str:
+def _build_prompt(body: Dict[str, Any], sop_id: str) -> str:
     parts = []
     task = _read_task_doc()
     if task:
@@ -76,7 +76,6 @@ def _build_prompt(body: Dict[str, Any], sop_id: str, user_text: str) -> str:
         parts.append(f"## SOP ({sop_id})\n" + sop_text)
     if ALERT_JSON_PRETTY and isinstance(body.get("alert"), dict):
         parts.append("## ALERT JSON\n" + json.dumps(body["alert"], ensure_ascii=False, indent=2))
-    parts.append("## USER\n" + user_text)
     return "\n\n".join(parts).strip()
 
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
@@ -189,12 +188,12 @@ async def ask_json(request: Request):
         body = await request.json()
     except Exception:
         raise HTTPException(400, "expect JSON body")
-    user_text = (body.get("text") or "").strip()
-    if not user_text:
-        raise HTTPException(400, "text required")
+    # 禁止传入 text
+    if "text" in body:
+        raise HTTPException(400, "text is not allowed; provide alert only")
 
-    # 禁止客户端直接传 sop_id/incident_key/prompt，强制 sdn5_cpu 风格
-    for k in ("sop_id", "incident_key", "prompt"):
+    # 禁止客户端直接传 sop_id/incident_key/prompt/text，强制 sdn5_cpu 风格
+    for k in ("sop_id", "incident_key", "prompt", "text"):
         if k in body and str(body.get(k, "")).strip():
             raise HTTPException(400, f"{k} is not allowed; provide alert + text only")
 
@@ -219,22 +218,8 @@ async def ask_json(request: Request):
             print(f"Load error: {e}")
             loaded = False
 
-    # 斜杠命令：直接透传（不拼接 TASK/SOP/ALERT），并为 /save 补充 -f
-    if user_text.startswith("/"):
-        slash_cmd = user_text
-        if slash_cmd.startswith("/save") and " -f" not in slash_cmd and " --force" not in slash_cmd:
-            slash_cmd += " -f"
-        t0 = time.time()
-        res = await _run_q_collect(sop_id, slash_cmd)
-        took_ms = int((time.time() - t0) * 1000)
-        out = {"ok": res["ok"], "sop_id": sop_id, "loaded": False, "saved": False,
-               "took_ms": took_ms, "output": _improve_json_readability(res.get("output", "")),
-               "events": res.get("events", []), "error": res.get("error", "")}
-        code = 200 if out["ok"] else 504
-        return JSONResponse(out, status_code=code)
-
-    # 普通问答：构建 Prompt 后再请求
-    prompt = _build_prompt(body, sop_id, user_text)
+    # 构建 Prompt（仅 TASK/SOP/ALERT）并请求
+    prompt = _build_prompt(body, sop_id)
     t0 = time.time()
     res = await _run_q_collect(sop_id, prompt)
     took_ms = int((time.time() - t0) * 1000)
