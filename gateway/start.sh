@@ -47,11 +47,18 @@ echo "  Gateway API: http://127.0.0.1:8081"
 for i in {1..10}; do
     if curl -s http://127.0.0.1:8081/healthz > /dev/null; then
         echo "✅ Gateway service is healthy"
-        exit 0
+        break
     fi
     echo "Waiting for service to start... ($i/10)"
     sleep 2
 done
 
-echo "❌ Gateway service health check failed"
-exit 1
+# 如果健康检查失败，退出
+if ! curl -s http://127.0.0.1:8081/healthz > /dev/null; then
+    echo "❌ Gateway service health check failed"
+    exit 1
+fi
+
+# 保持运行，等待子进程
+echo "Gateway service is running. Waiting for processes..."
+wait $GATEWAY_PID

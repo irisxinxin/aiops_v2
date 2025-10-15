@@ -129,13 +129,13 @@ class _QPool:
         self._init_lock: Lock = Lock()
 
     async def _ensure_min_clients(self):
+        global _GLOBAL_CONN
         async with self._init_lock:
             while len(self._clients) < self.size:
                 # 全局连接上限控制
                 acquired_global = False
                 for _ in range(300):  # 最长约3s等待全局额度
                     async with _GLOBAL_LOCK:
-                        global _GLOBAL_CONN
                         if _GLOBAL_CONN < QTTY_MAX_CONN:
                             _GLOBAL_CONN += 1
                             acquired_global = True
@@ -150,7 +150,6 @@ class _QPool:
                         break
                     # 淘汰成功后继续重试一次获取额度
                     async with _GLOBAL_LOCK:
-                        global _GLOBAL_CONN
                         if _GLOBAL_CONN < QTTY_MAX_CONN:
                             _GLOBAL_CONN += 1
                             acquired_global = True
@@ -202,6 +201,7 @@ class _QPool:
 
 async def _evict_one_idle() -> bool:
     """在所有 sop 池中淘汰一个空闲连接（LRU），释放全局额度。"""
+    global _GLOBAL_CONN
     # 选择最久未使用且未加锁的连接
     candidate: Tuple[str, int, _PooledClient] | None = None
     oldest = float('inf')
@@ -233,7 +233,6 @@ async def _evict_one_idle() -> bool:
                 _SOP_POOLS.pop(sop, None)
         # 回收全局额度
         async with _GLOBAL_LOCK:
-            global _GLOBAL_CONN
             if _GLOBAL_CONN > 0:
                 _GLOBAL_CONN -= 1
         return True
