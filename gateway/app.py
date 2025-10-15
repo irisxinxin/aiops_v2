@@ -1,4 +1,4 @@
-import os, sys, json, asyncio, time, re, subprocess
+import os, sys, json, asyncio, time, re, subprocess, shutil, signal
 from asyncio import Lock
 from typing import List, Tuple
 from typing import Any, Dict, Optional
@@ -24,7 +24,7 @@ TASK_DOC_PATH = Path(os.getenv("TASK_DOC_PATH", "./task_instructions.md"))
 TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))
 ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","False")
 
-Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "60"))
+Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
 SLASH_TIMEOUT = int(os.getenv("SLASH_TIMEOUT", "10"))
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
@@ -131,6 +131,68 @@ _TOOL_FAIL_PAT = re.compile(
 
 def _looks_like_tool_unavailable(text: str) -> bool:
     return bool(_TOOL_FAIL_PAT.search(text or ""))
+
+# 进程/会话目录辅助
+def _pids_q_using_dir(dir_path: Path) -> list[int]:
+    """找出 cwd==dir_path 的 q 进程 PID 列表"""
+    pids: list[int] = []
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            comm_p = Path(f"/proc/{pid}/comm")
+            cwd_p = Path(f"/proc/{pid}/cwd")
+            try:
+                if comm_p.read_text().strip() != "q":
+                    continue
+                cw = os.path.realpath(str(cwd_p))
+                if cw == str(dir_path.resolve()):
+                    pids.append(int(pid))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return pids
+
+def _purge_session_dir(sop_dir: Path) -> tuple[bool, str]:
+    """
+    安全删除会话目录：仅允许删除 SESSION_ROOT 下的子目录；
+    先 SIGTERM 优雅退出占用的 q 进程，最多等 5s；仍存活则 SIGKILL；最后 rm -rf。
+    """
+    try:
+        sop_dir = sop_dir.resolve()
+        root = SESSION_ROOT.resolve()
+        # 必须在 SESSION_ROOT 下，且不是根本身
+        sop_dir.relative_to(root)
+        if sop_dir == root:
+            return False, "refuse to delete SESSION_ROOT itself"
+        if not sop_dir.exists():
+            return True, "dir not found (already gone)"
+
+        pids = _pids_q_using_dir(sop_dir)
+        if pids:
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                alive = [pid for pid in pids if os.path.exists(f"/proc/{pid}")]
+                if not alive:
+                    break
+                time.sleep(0.2)
+            for pid in pids:
+                if os.path.exists(f"/proc/{pid}"):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except Exception:
+                        pass
+
+        shutil.rmtree(sop_dir)
+        return True, "deleted"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
 
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
@@ -455,6 +517,13 @@ async def ask_json(request: Request):
             "ok": res["ok"]
         })
 
+    # 超时清理：若本次请求以超时失败，尝试安全删除本次使用的会话目录
+    purged_on_timeout = False
+    purge_reason = ""
+    if (not res.get("ok")) and ("timeout" in (res.get("error", "").lower())):
+        ok_del, why = _purge_session_dir(SESSION_ROOT / sop_used)
+        purged_on_timeout, purge_reason = ok_del, why
+
     out = {
         "ok": res["ok"],
         "sop_id": sop_id,
@@ -466,6 +535,8 @@ async def ask_json(request: Request):
         "fell_back_offline": fell_back_offline,
         "attempts": attempts,
         "retry_wait_seconds": TOOL_RETRY_WAIT,
+        "purged_on_timeout": purged_on_timeout,
+        "purge_reason": purge_reason,
     }
     return JSONResponse(out, status_code=200 if out["ok"] else 504)
 
