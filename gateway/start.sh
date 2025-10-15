@@ -29,5 +29,6 @@ ttyd --interface "${QTTY_HOST:-127.0.0.1}" \
      --ping-interval "${QTTY_PING:-55}" \
      bash gateway/q_entry.sh &
 
+sleep "${WARMUP_SLEEP:-15}" || true
 echo "Starting Gateway API service..."
 exec uvicorn gateway.app:app --host "${HTTP_HOST:-0.0.0.0}" --port "${HTTP_PORT:-8081}" --log-level info

@@ -19,11 +19,15 @@ Environment=HOME=/home/ubuntu
 Environment=QTTY_HOST=127.0.0.1
 Environment=QTTY_PORT=7682
 Environment=QTTY_PING=55
-Environment=QTTY_MAX_CONN=64
+Environment=QTTY_MAX_CONN=8
 Environment=HTTP_HOST=0.0.0.0
 Environment=HTTP_PORT=8081
 Environment=SSE_PING_SECONDS=10
-Environment=Q_OVERALL_TIMEOUT=120
+Environment=Q_OVERALL_TIMEOUT=30
+Environment=TOOL_RETRY_WAIT=10
+Environment=TOOL_RETRY_COUNT=3
+Environment=OFFLINE_FALLBACK=1
+Environment=WARMUP_SLEEP=15
 Environment=ALERT_JSON_PRETTY=1
 Environment=Q_CMD=/home/ubuntu/.local/bin/q
 
