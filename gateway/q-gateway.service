@@ -14,14 +14,17 @@ Environment=PATH=/home/ubuntu/huixin/aiops_v2/.venv/bin:/usr/local/bin:/usr/bin:
 Environment=PYTHONPATH=/home/ubuntu/huixin/aiops_v2
 Environment=SOP_DIR=/home/ubuntu/huixin/aiops_v2/sop
 Environment=TASK_DOC_PATH=/home/ubuntu/huixin/aiops_v2/task_instructions.md
+Environment=SESSION_ROOT=/srv/q-sessions
 Environment=QTTY_HOST=127.0.0.1
 Environment=QTTY_PORT=7682
 Environment=QTTY_PING=55
+Environment=QTTY_MAX_CONN=20
 Environment=ALERT_JSON_PRETTY=1
+Environment=Q_CMD=/home/ubuntu/.local/bin/q
 
 # Service execution
-ExecStartPre=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
-ExecStart=/home/ubuntu/huixin/aiops_v2/gateway/systemd_start.sh
+ExecStartPre=/bin/bash -lc 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
+ExecStart=/usr/bin/bash -lc 'bash gateway/start.sh'
 ExecStop=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
 ExecReload=/bin/kill -HUP $MAINPID
 
