@@ -13,9 +13,7 @@ def _slug(s: str) -> str:
 
 
 def build_incident_key_from_alert(alert: dict) -> str:
-    """从 alert 生成规范化 incident_key: service_category_severity_region[_title|name][_group]
-    再追加 6 位 sha1 后缀，保证简短唯一。
-    """
+    """从 alert 生成规范化 incident_key: service_category_severity_region[_title|name][_group]"""
     metadata = alert.get("metadata", {})
 
     parts = [
@@ -42,15 +40,13 @@ def build_incident_key_from_alert(alert: dict) -> str:
         parts.append(_slug(group_id))
 
     base = "_".join([p for p in parts if p])
-    if not base:
-        return hashlib.sha1(b"empty").hexdigest()[:6]
-    suffix6 = hashlib.sha1(base.encode()).hexdigest()[:6]
-    return f"{base}-{suffix6}"
+    return base or ""
 
 
 def sop_id_from_incident_key(incident_key: str) -> str:
-    """根据 incident_key 生成短 sop_id：slug(incident_key) + '-' + 6位sha1。"""
-    base = _slug(incident_key)
-    suffix6 = hashlib.sha1(base.encode()).hexdigest()[:6]
-    return f"{base}-{suffix6}" if base else suffix6
+    """根据 incident_key 生成 6 位数字 sop_id（非后缀，纯数字）。"""
+    import zlib
+    base = (incident_key or "").strip().lower()
+    code = zlib.crc32(base.encode("utf-8")) % 1_000_000
+    return f"{code:06d}"
 
