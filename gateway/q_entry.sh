@@ -16,6 +16,10 @@ SESSION_DIR="${PROJECT_DIR}/q-sessions/${SOP_ID}"
 mkdir -p "$SESSION_DIR"
 cd "$SESSION_DIR"
 
+# 写入探测，避免只读导致崩溃
+touch .q_rw_test || { echo "CWD is read-only: $PWD" >&2; exit 30; }
+rm -f .q_rw_test || true
+
 # 选择 Q 可执行文件（可被环境 Q_CMD 覆盖）
 Q_CMD="${Q_CMD:-}"
 if [ -z "$Q_CMD" ]; then
