@@ -23,7 +23,8 @@ Environment=ALERT_JSON_PRETTY=1
 Environment=Q_CMD=/home/ubuntu/.local/bin/q
 
 # Service execution
-ExecStartPre=/bin/bash -lc 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
+ExecStartPre=-/usr/bin/pkill -f 'uvicorn.*app:app'
+ExecStartPre=-/usr/bin/pkill -f 'ttyd.*q_entry.sh'
 ExecStart=/usr/bin/bash -lc 'bash gateway/start.sh'
 ExecStop=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
 ExecReload=/bin/kill -HUP $MAINPID
