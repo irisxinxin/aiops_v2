@@ -30,6 +30,11 @@ SLASH_TIMEOUT = int(os.getenv("SLASH_TIMEOUT", "10"))
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
 
+# 工具软等与离线兜底策略
+TOOL_RETRY_WAIT = int(os.getenv("TOOL_RETRY_WAIT", "5"))  # 秒
+TOOL_RETRY_COUNT = int(os.getenv("TOOL_RETRY_COUNT", "2"))
+OFFLINE_FALLBACK = os.getenv("OFFLINE_FALLBACK", "1") not in ("0", "false", "False")
+
 app = FastAPI(title=APP_NAME)
 
 
@@ -69,16 +74,33 @@ def _load_sop_text(sop_id: str) -> str:
             continue
     return ""
 
-def _build_prompt(body: Dict[str, Any], sop_id: str) -> str:
+from typing import Optional
+
+def _build_prompt(body: Dict[str, Any], sop_id: str, allow_tools: bool = True) -> str:
     parts = []
+
     task = _read_task_doc()
     if task:
         parts.append("## TASK INSTRUCTIONS\n" + task)
+
     sop_text = _load_sop_text(sop_id)
     if sop_text:
         parts.append(f"## SOP ({sop_id})\n" + sop_text)
+
+    if not allow_tools:
+        parts.append("""## TOOL POLICY
+- Do NOT call any tools or MCP servers in this turn.
+- Use ONLY SOP and ALERT JSON to produce output.
+- If data is missing, fill fields with null/empty; do not ask questions.""")
+
+        parts.append("""## OUTPUT SPEC
+Return ONLY one JSON object (no extra prose) with:
+incident_key, sop_id, severity, classification, impact, hypothesis,
+runbook_steps[], commands[], next_action""")
+
     if ALERT_JSON_PRETTY and isinstance(body.get("alert"), dict):
         parts.append("## ALERT JSON\n" + json.dumps(body["alert"], ensure_ascii=False, indent=2))
+
     return "\n\n".join(parts).strip()
 
 def _log_prompt(sop_id: str, prompt: str) -> None:
@@ -94,6 +116,25 @@ def _log_prompt(sop_id: str, prompt: str) -> None:
             f.write("\n")
     except Exception:
         pass
+
+# 简单判定：输出中包含工具未就绪/仍加载等提示
+_TOOL_UNAVAILABLE_PATTERNS = [
+    r"Servers\s+still\s+loading",
+    r"tools?\s+.*not\s+available",
+    r"tool\s+.*unavailable",
+    r"initiali[sz]ing\s+MCP",
+    r"try\s+again\s+later",
+    r"WouldBlock",
+    r"Resource\s+temporarily\s+unavailable",
+]
+_TOOL_UNAVAIL_RE = re.compile("|".join(_TOOL_UNAVAILABLE_PATTERNS), re.IGNORECASE)
+
+def _looks_like_tool_unavailable(output: str) -> bool:
+    if not output:
+        return False
+    if _TOOL_UNAVAIL_RE.search(output) is not None:
+        return True
+    return False
 
 async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
@@ -334,6 +375,14 @@ def _require_sop_inputs(body: Dict[str, Any]) -> str:
         return sop_id_from_incident_key(ik)
     raise HTTPException(400, "alert{service,category,severity,region,title} is required")
 
+def _resolve_sop_id(body: Dict[str, Any]) -> str:
+    if "sop_id" in body and str(body["sop_id"]).strip():
+        return str(body["sop_id"]).strip()
+    if "incident_key" in body and str(body["incident_key"]).strip():
+        return sop_id_from_incident_key(str(body["incident_key"]).strip())
+    # fallback to alert path
+    return _require_sop_inputs(body)
+
 
 @app.get("/healthz")
 def healthz():
@@ -341,77 +390,63 @@ def healthz():
 
 @app.post("/ask_json")
 async def ask_json(request: Request):
-    """Single-shot workflow:
-    (1) incident_key -> sop_id
-    (2) if session file exists, /load
-    (3) inject SOP/TASK/ALERT into prompt, ask and collect all output
-    (4) if output usable, /save
-    (5) return JSON with all details
-    """
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(400, "expect JSON body")
-    # 禁止传入 text
-    if "text" in body:
-        raise HTTPException(400, "text is not allowed; provide alert only")
 
-    # 禁止客户端直接传 sop_id/incident_key/prompt/text，强制 sdn5_cpu 风格
-    for k in ("sop_id", "incident_key", "prompt", "text"):
-        if k in body and str(body.get(k, "")).strip():
-            raise HTTPException(400, f"{k} is not allowed; provide alert + text only")
+    # 不允许传 text（只接受 alert / sop_id / incident_key）
+    if "text" in body and str(body["text"]).strip():
+        raise HTTPException(400, "text is not allowed; provide alert/sop_id/incident_key only")
 
-    # 仅通过 alert 解析 sop_id
-    sop_id = _require_sop_inputs(body)
-    workdir = SESSION_ROOT / sop_id
-    workdir.mkdir(parents=True, exist_ok=True)
+    sop_id = _resolve_sop_id(body)
+    (SESSION_ROOT / sop_id).mkdir(parents=True, exist_ok=True)
 
-    # auto-load conversation history
-    loaded = False
-    conv_file = workdir / "conv.json"
-    if conv_file.exists():
-        try:
-            with open(conv_file, 'r', encoding='utf-8') as f:
-                conv_data = json.load(f)
-            # Add previous context to the current request
-            if conv_data.get("response"):
-                # This is a simple approach - in a real implementation you'd want to 
-                # properly integrate with Q's conversation history
-                loaded = True
-        except Exception as e:
-            print(f"Load error: {e}")
-            loaded = False
+    attempts = []
 
-    # 构建 Prompt（仅 TASK/SOP/ALERT）并请求
-    prompt = _build_prompt(body, sop_id)
+    # 1) 首次：允许工具
+    prompt = _build_prompt(body, sop_id, allow_tools=True)
     _log_prompt(sop_id, prompt)
     t0 = time.time()
-    res = await _run_q_collect(sop_id, prompt)
-    took_ms = int((time.time() - t0) * 1000)
+    res = await _run_q_collect(sop_id, prompt, timeout=Q_OVERALL_TIMEOUT)
+    attempts.append({"allow_tools": True, "took_ms": int((time.time()-t0)*1000), "ok": res["ok"]})
 
-    # save conversation directly to file
-    saved = False
-    if res["ok"] and len(res["output"].strip()) > 100:
-        try:
-            conv_file = workdir / "conv.json"
-            # Create a simple conversation record
-            conv_data = {
-                "timestamp": time.time(),
-                "request": body.get("text", ""),
-                "alert": body.get("alert", {}),
-                "response": res["output"],
-                "sop_id": sop_id
-            }
-            with open(conv_file, 'w', encoding='utf-8') as f:
-                json.dump(conv_data, f, indent=2, ensure_ascii=False)
-            saved = conv_file.exists()
-        except Exception as e:
-            print(f"Save error: {e}")
-            saved = False
+    # 2) 若工具未就绪：等待 TOOL_RETRY_WAIT 秒，再“允许工具”重试 N 次
+    retried_with_tools = False
+    if _looks_like_tool_unavailable(res.get("output", "")) and TOOL_RETRY_COUNT > 0:
+        retried_with_tools = True
+        for _ in range(TOOL_RETRY_COUNT):
+            await asyncio.sleep(TOOL_RETRY_WAIT)
+            prompt2 = _build_prompt(body, sop_id, allow_tools=True)
+            _log_prompt(sop_id, prompt2)
+            t1 = time.time()
+            res2 = await _run_q_collect(sop_id, prompt2, timeout=Q_OVERALL_TIMEOUT)
+            attempts.append({"allow_tools": True, "took_ms": int((time.time()-t1)*1000), "ok": res2["ok"]})
+            if res2["ok"] and not _looks_like_tool_unavailable(res2.get("output", "")):
+                res = res2
+                break
 
-    out = {"ok": res["ok"], "sop_id": sop_id, "loaded": loaded, "saved": saved,
-           "took_ms": took_ms, "output": _improve_json_readability(res["output"]), "events": res["events"], "error": res["error"]}
-    code = 200 if out["ok"] else 504
-    return JSONResponse(out, status_code=code)
+    # 3) 仍失败/仍提示工具未就绪 → 禁用工具离线分析（一次）
+    fell_back_offline = False
+    if OFFLINE_FALLBACK and (not res["ok"] or _looks_like_tool_unavailable(res.get("output", ""))):
+        fell_back_offline = True
+        prompt_off = _build_prompt(body, sop_id, allow_tools=False)
+        _log_prompt(sop_id, prompt_off)
+        t2 = time.time()
+        res = await _run_q_collect(sop_id, prompt_off, timeout=Q_OVERALL_TIMEOUT)
+        attempts.append({"allow_tools": False, "took_ms": int((time.time()-t2)*1000), "ok": res["ok"]})
+
+    out = {
+        "ok": res["ok"],
+        "sop_id": sop_id,
+        "output": res.get("output", ""),
+        "events": res.get("events", []),
+        "error": res.get("error", ""),
+        "retried_with_tools": retried_with_tools,
+        "fell_back_offline": fell_back_offline,
+        "attempts": attempts,
+        "retry_wait_seconds": TOOL_RETRY_WAIT,
+    }
+    return JSONResponse(out, status_code=200 if out["ok"] else 504)
 
 
