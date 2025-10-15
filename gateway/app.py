@@ -65,11 +65,39 @@ def _load_sop_text(sop_id: str) -> str:
                         obj = json.loads(line)
                     except Exception:
                         continue
-                    if isinstance(obj, dict) and str(obj.get("sop_id","")).strip() == sop_id:
+                    if isinstance(obj, dict) and str(obj.get("sop_id","" )).strip() == sop_id:
+                        # 1) direct text fields
                         for key in ("sop","content","text","body"):
                             v = obj.get(key)
                             if isinstance(v, str) and v.strip():
                                 return v.strip()
+                        # 2) assemble from structured fields
+                        parts2 = []
+                        title = obj.get("title") or obj.get("name")
+                        if isinstance(title, str) and title.strip():
+                            parts2.append(f"# {title.strip()}")
+                        if obj.get("priority"):
+                            parts2.append(f"Priority: {obj.get('priority')}")
+                        if obj.get("keys"):
+                            try:
+                                parts2.append("Keys: " + ", ".join(map(str, obj.get("keys") or [])))
+                            except Exception:
+                                pass
+                        def _section(h, arr):
+                            if isinstance(arr, list) and arr:
+                                lines = "\n".join([f"- {str(x)}" for x in arr])
+                                parts2.append(f"## {h}\n{lines}")
+                        _section("Commands", obj.get("command"))
+                        _section("Metrics", obj.get("metric"))
+                        _section("Logs", obj.get("log"))
+                        _section("Fix Actions", obj.get("fix_action"))
+                        if parts2:
+                            return "\n\n".join(parts2).strip()
+                        # 3) fallback: raw json
+                        try:
+                            return json.dumps(obj, ensure_ascii=False, indent=2)
+                        except Exception:
+                            return str(obj)
         except Exception:
             continue
     return ""
