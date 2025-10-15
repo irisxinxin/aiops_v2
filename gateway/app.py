@@ -158,15 +158,18 @@ def _is_usable(text: str) -> bool:
             return False
     return True
 
-def _resolve_sop_id(body: Dict[str, Any]) -> str:
-    if "sop_id" in body and body["sop_id"]:
-        return str(body["sop_id"]).strip()
-    if "incident_key" in body and body["incident_key"]:
-        return sop_id_from_incident_key(str(body["incident_key"]))
-    if "alert" in body and isinstance(body["alert"], dict):
-        ik = build_incident_key_from_alert(body["alert"])
+REQUIRED_ALERT_KEYS = ("service", "category", "severity", "region", "title")
+
+def _require_sop_inputs(body: Dict[str, Any]) -> str:
+    """仅允许从 alert 构造 sop_id（强制 sdn5_cpu 风格）。"""
+    alert = body.get("alert")
+    if isinstance(alert, dict):
+        missing = [k for k in REQUIRED_ALERT_KEYS if not str(alert.get(k, "")).strip()]
+        if missing:
+            raise HTTPException(400, f"alert missing required fields: {', '.join(missing)}")
+        ik = build_incident_key_from_alert(alert)
         return sop_id_from_incident_key(ik)
-    return "default"
+    raise HTTPException(400, "alert{service,category,severity,region,title} is required")
 
 
 @app.get("/healthz")
@@ -190,13 +193,13 @@ async def ask_json(request: Request):
     if not user_text:
         raise HTTPException(400, "text required")
 
-    # 斜杠命令必须显式提供 sop_id，避免会话未定位导致阻塞
-    if user_text.startswith("/"):
-        explicit_sop = str(body.get("sop_id", "")).strip()
-        if not explicit_sop:
-            raise HTTPException(400, "slash command requires explicit sop_id")
+    # 禁止客户端直接传 sop_id/incident_key/prompt，强制 sdn5_cpu 风格
+    for k in ("sop_id", "incident_key", "prompt"):
+        if k in body and str(body.get(k, "")).strip():
+            raise HTTPException(400, f"{k} is not allowed; provide alert + text only")
 
-    sop_id = _resolve_sop_id(body)
+    # 仅通过 alert 解析 sop_id
+    sop_id = _require_sop_inputs(body)
     workdir = SESSION_ROOT / sop_id
     workdir.mkdir(parents=True, exist_ok=True)
 
