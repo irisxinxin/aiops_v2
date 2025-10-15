@@ -1,35 +1,56 @@
 #!/usr/bin/env python3
+import re
 import hashlib
 
 
+_NON_ALNUM = re.compile(r"[^a-zA-Z0-9]+")
+
+
+def _slug(s: str) -> str:
+    s = _NON_ALNUM.sub("-", s.strip()).strip("-")
+    s = re.sub(r"-+", "-", s)
+    return s.lower()
+
+
 def build_incident_key_from_alert(alert: dict) -> str:
-    """从 alert 生成标准 incident_key: service_category_severity_region[_name][_group]
-    并追加 10位 sha1 后缀避免冲突。
+    """从 alert 生成规范化 incident_key: service_category_severity_region[_title|name][_group]
+    再追加 6 位 sha1 后缀，保证简短唯一。
     """
-    # 从metadata中获取更准确的信息
     metadata = alert.get("metadata", {})
-    
-    service = str(alert.get("service", "")).strip()
-    category = str(alert.get("category", "")).strip()
-    severity = str(alert.get("severity", "")).strip()
-    region = str(alert.get("region", "")).strip()
-    
-    # 优先从metadata获取alertname
-    name = str(metadata.get("alertname", "") or alert.get("alertname", "") or alert.get("name", "")).strip()
+
+    parts = [
+        _slug(str(alert.get("service", ""))),
+        _slug(str(alert.get("category", ""))),
+        _slug(str(alert.get("severity", ""))),
+        _slug(str(alert.get("region", ""))),
+    ]
+
+    title = str(alert.get("title", "") or metadata.get("title", "")).strip()
+    fallback_name = str(
+        alert.get("name", "")
+        or alert.get("alertname", "")
+        or metadata.get("name", "")
+        or metadata.get("alertname", "")
+    ).strip()
     group_id = str(metadata.get("group_id", "") or alert.get("group_id", "") or alert.get("group", "")).strip()
 
-    base = "_".join([x for x in [service, category, severity, region] if x])
-    if name:
-        base += f"_{name}"
+    if title:
+        parts.append(_slug(title))
+    elif fallback_name:
+        parts.append(_slug(fallback_name))
     if group_id:
-        base += f"_{group_id}"
+        parts.append(_slug(group_id))
 
-    # hash 后缀（稳定且避免冲突）
-    suffix = hashlib.sha1(base.encode()).hexdigest()[:10]
-    return f"{base}-{suffix}" if base else suffix
+    base = "_".join([p for p in parts if p])
+    if not base:
+        return hashlib.sha1(b"empty").hexdigest()[:6]
+    suffix6 = hashlib.sha1(base.encode()).hexdigest()[:6]
+    return f"{base}-{suffix6}"
 
 
 def sop_id_from_incident_key(incident_key: str) -> str:
-    """将 incident_key 规范化为 sop_id（同名即可）。"""
-    return incident_key.replace(" ", "-").replace("/", "-").lower()
+    """根据 incident_key 生成短 sop_id：slug(incident_key) + '-' + 6位sha1。"""
+    base = _slug(incident_key)
+    suffix6 = hashlib.sha1(base.encode()).hexdigest()[:6]
+    return f"{base}-{suffix6}" if base else suffix6
 
