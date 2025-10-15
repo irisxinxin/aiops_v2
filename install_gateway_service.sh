@@ -1,24 +1,33 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$REPO_ROOT"
+set -e
 
-echo "[INSTALL] Installing Q Gateway systemd service..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Stop existing service if running
+echo "Installing Q Gateway systemd service..."
+
+# 停止现有服务
 sudo systemctl stop q-gateway || true
 
-# Copy service file
+# 复制服务文件
 sudo cp gateway/q-gateway.service /etc/systemd/system/
 
-# Reload systemd
+# 重新加载 systemd
 sudo systemctl daemon-reload
 
-# Enable service
+# 启用服务
 sudo systemctl enable q-gateway
 
-echo "[INSTALL] Service installed successfully"
-echo "[INSTALL] To start: sudo systemctl start q-gateway"
-echo "[INSTALL] To check status: sudo systemctl status q-gateway"
-echo "[INSTALL] To view logs: sudo journalctl -u q-gateway -f"
+# 启动服务
+sudo systemctl start q-gateway
+
+# 检查状态
+sleep 5
+sudo systemctl status q-gateway --no-pager
+
+echo ""
+echo "✅ Q Gateway service installed and started"
+echo "   Service status: sudo systemctl status q-gateway"
+echo "   Service logs: sudo journalctl -u q-gateway -f"
+echo "   Gateway API: http://127.0.0.1:8081/healthz"

@@ -1,0 +1,17 @@
+{
+  "text": "第2次分析sdn5 CPU告警，请详细分析根因并给出解决建议",
+  "alert": {
+    "status": "firing",
+    "env": "dev",
+    "service": "sdn5",
+    "category": "cpu", 
+    "severity": "critical",
+    "title": "sdn5 container CPU usage is too high",
+    "metadata": {
+      "current_value": 0.92,
+      "threshold_value": 0.9,
+      "pod": "omada-device-gateway-6.0.0189-59ccd49449-98n7b",
+      "container": "omada-device-gateway"
+    }
+  }
+}

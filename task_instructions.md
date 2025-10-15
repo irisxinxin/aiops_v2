@@ -20,6 +20,7 @@ EFFICIENCY NOTE: Limit tools to 3-5 key queries, focus on most impactful evidenc
 3. **ONLY FINAL JSON**: Your response must contain ONLY the final JSON result, nothing else
 4. **NO MARKDOWN**: Do not wrap JSON in markdown code blocks or add any formatting
 5. **NO EXPLANATIONS**: Do not add any text before or after the JSON
+6. **READABLE TEXT**: Ensure all text strings in JSON have proper spacing between words for readability
 
 ## REQUIRED JSON FORMAT:
 

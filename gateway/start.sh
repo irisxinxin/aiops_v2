@@ -1,35 +1,51 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-# Stop previous services first
-echo "Stopping previous gateway services..."
-pkill -f "uvicorn gateway.app:app" || true
-pkill -f "ttyd.*gateway" || true
-sleep 2
+set -e
 
-# Activate virtual environment
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_DIR"
+
+# 激活虚拟环境
 source .venv/bin/activate
 
-# Ports
-HTTP_PORT="${HTTP_PORT:-8081}"
-QTTY_PORT="${QTTY_PORT:-7682}"
+# 停止之前的服务
+echo "Stopping previous gateway services..."
+pkill -f "uvicorn gateway.app:app" || true
+pkill -f "ttyd.*gateway/q_entry.sh" || true
+sleep 2
 
-# Clean up ports best-effort
-kill_port(){
-  local p="$1"
-  if lsof -iTCP:"$p" -sTCP:LISTEN -t >/dev/null 2>&1; then
-    lsof -iTCP:"$p" -sTCP:LISTEN -t | xargs -r kill -9 || true
-  fi
-}
+# 启动 ttyd 服务 (Q CLI 终端)
+echo "Starting ttyd service..."
+ttyd --ping-interval 55 -p 7682 --writable --interface 127.0.0.1 bash gateway/q_entry.sh &
+TTYD_PID=$!
 
-mkdir -p logs
-kill_port "$QTTY_PORT" || true
-kill_port "$HTTP_PORT" || true
+# 等待 ttyd 启动
+sleep 3
 
-# Start ttyd (loopback only, no auth, heartbeat)
-nohup ttyd --ping-interval 55 -p "$QTTY_PORT" --writable --interface 127.0.0.1 bash gateway/q_entry.sh > ./logs/ttyd.gateway.out 2>&1 & 
-echo $! > ./logs/ttyd.gateway.pid
+# 启动 Gateway API 服务
+echo "Starting Gateway API service..."
+python3 -m uvicorn gateway.app:app --host 0.0.0.0 --port 8081 --log-level info &
+GATEWAY_PID=$!
 
-# Start FastAPI app
-exec python3 -m uvicorn gateway.app:app --host 0.0.0.0 --port "$HTTP_PORT" --log-level info
+# 保存 PID
+echo $GATEWAY_PID > gateway.pid
 
+echo "Services started:"
+echo "  TTYD PID: $TTYD_PID"
+echo "  Gateway PID: $GATEWAY_PID"
+echo "  Gateway API: http://127.0.0.1:8081"
+
+# 等待服务启动并检查健康状态
+for i in {1..10}; do
+    if curl -s http://127.0.0.1:8081/healthz > /dev/null; then
+        echo "✅ Gateway service is healthy"
+        exit 0
+    fi
+    echo "Waiting for service to start... ($i/10)"
+    sleep 2
+done
+
+echo "❌ Gateway service health check failed"
+exit 1

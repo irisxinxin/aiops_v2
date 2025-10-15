@@ -1,0 +1,1357 @@
+{
+  "conversation_id": "ac61eef4-6012-4e88-9522-319586c2d141",
+  "next_message": null,
+  "history": [],
+  "valid_history_range": [
+    0,
+    0
+  ],
+  "transcript": [],
+  "tools": {
+    "victoriametrics": [
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___top_queries",
+          "description": "Top queries.\nThis tool can determine top queries of the following query types:\n- the most frequently executed queries;\n- queries with the biggest average execution duration;\n- queries that took the most summary time for execution.\nThis information is obtained from the \"/api/v1/status/top_queries\" HTTP endpoint of VictoriaMetrics API.\n",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "tenant": {
+                  "title": "Tenant name",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "type": "string",
+                  "description": "Name of the tenant for which the top queries will be displayed",
+                  "default": "0"
+                },
+                "topN": {
+                  "minimum": 1,
+                  "description": "The number of top entries to return in the response. By default is 20.",
+                  "title": "Top N",
+                  "type": "number",
+                  "default": 20
+                },
+                "maxLifetime": {
+                  "type": "string",
+                  "pattern": "^([0-9]+)([a-z]+)$",
+                  "description": "Max lifetime of the queries to be taken into account during stats calculation. By default is 10m.",
+                  "default": "10m",
+                  "title": "Max lifetime"
+                }
+              },
+              "required": [
+                "topN"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___alerts",
+          "description": "List of firing and pending alerts of the VictoriaMetrics instance. This tool uses `/api/v1/alerts` endpoint of vmalert API, proxied by VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "state": {
+                  "description": "Filter alerts by their state. Possible values: 'firing', 'pending', 'all'. Default is 'all'.",
+                  "type": "string",
+                  "default": "all",
+                  "title": "Filter by alert state",
+                  "enum": [
+                    "firing",
+                    "pending",
+                    "all"
+                  ]
+                },
+                "group": {
+                  "type": "string",
+                  "default": "",
+                  "title": "Filter by alert group",
+                  "description": "Filter alerts by their group name. If not specified, all groups are included."
+                },
+                "offset": {
+                  "description": "Number of alerts to skip before starting to collect the result set. Default is 0.",
+                  "type": "number",
+                  "default": 0,
+                  "title": "Offset for pagination"
+                },
+                "tenant": {
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "type": "string",
+                  "default": "0",
+                  "description": "Name of the tenant for which the list of alerts will be displayed",
+                  "title": "Tenant name"
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of alerts to return. If not specified, all alerts are returned.",
+                  "title": "Limit the number of alerts",
+                  "default": 0
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___export",
+          "description": "Export time series to file (json or csv) from VictoriaMetrics instance. This tool uses `/api/v1/export` or `/api/v1/export/csv` endpoints of VictoriaMetrics API)",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "tenant": {
+                  "description": "Name of the tenant for which the data will be exported",
+                  "default": "0",
+                  "title": "Tenant name",
+                  "type": "string",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$"
+                },
+                "end": {
+                  "title": "End timestamp",
+                  "type": "string",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "default": "",
+                  "description": "End timestamp for export"
+                },
+                "format": {
+                  "description": "Export format: json (default) or csv",
+                  "enum": [
+                    "csv",
+                    "json"
+                  ],
+                  "type": "string",
+                  "default": "json"
+                },
+                "match": {
+                  "description": "Time series selector argument that selects the series for export",
+                  "type": "string",
+                  "title": "Match series for export"
+                },
+                "start": {
+                  "type": "string",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "default": "",
+                  "description": "Start timestamp for export",
+                  "title": "Start timestamp"
+                }
+              },
+              "required": [
+                "match",
+                "format"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___series",
+          "description": "List of available time series of the VictoriaMetrics instance. This tool uses `/api/v1/series` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "limit": {
+                  "description": "Maximum number of time series to return",
+                  "title": "Maximum number of time series",
+                  "default": 0,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "start": {
+                  "title": "Start timestamp",
+                  "default": "",
+                  "description": "Start timestamp for selection time series",
+                  "type": "string",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$"
+                },
+                "end": {
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "default": "",
+                  "title": "End timestamp",
+                  "description": "End timestamp for selection time series",
+                  "type": "string"
+                },
+                "match": {
+                  "title": "Match series",
+                  "default": "",
+                  "description": "Time series selector argument that selects the series",
+                  "type": "string"
+                },
+                "tenant": {
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "default": "0",
+                  "type": "string",
+                  "description": "Name of the tenant for which the list of time series will be displayed",
+                  "title": "Tenant name"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___active_queries",
+          "description": "Active queries. This tool can determine currently active queries in the VictoriaMetrics instance.\nThis information is obtained from the \"/api/v1/status/active_queries\" HTTP endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "tenant": {
+                  "title": "Tenant name",
+                  "type": "string",
+                  "description": "Name of the tenant for which the active queries will be displayed",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "default": "0"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___rules",
+          "description": "List of alerting and recording rules of VictoriaMetrics instance. This tool uses `/api/v1/rules` endpoint of vmalert API proxied by VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "exclude_alerts": {
+                  "description": "Exclude alerts from the list",
+                  "default": false,
+                  "type": "boolean",
+                  "title": "Exclude alerts"
+                },
+                "rule_files": {
+                  "description": "Filter rules by file names",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Rule files"
+                },
+                "rule_names": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Rule names",
+                  "description": "Filter rules by name"
+                },
+                "rule_groups": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "description": "Filter rules by group names",
+                  "title": "Rule groups"
+                },
+                "tenant": {
+                  "type": "string",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "title": "Tenant name",
+                  "description": "Name of the tenant for which the list of rules will be displayed",
+                  "default": "0"
+                },
+                "filter": {
+                  "description": "Extra filter for rules with possible problems: unhealthy (rules that get some errors during evaluation) or noMatch (rules that don't match any time series)",
+                  "enum": [
+                    "unhealthy",
+                    "noMatch"
+                  ],
+                  "title": "Extra filter for rules",
+                  "type": "string",
+                  "default": ""
+                },
+                "type": {
+                  "description": "Rules type to be displayed: alert or record",
+                  "title": "Rules type",
+                  "type": "string",
+                  "enum": [
+                    "alert",
+                    "record"
+                  ],
+                  "default": ""
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___retention_filters_debug",
+          "description": "Retention filters debug tool is used to debug flag \"retentionFilter\" and \"retentionPeriod\" with some series and see what retention policy will be applied for which series in Enterprise version of VictoriaMetrics.\nThis tool use \"/retention-filters-debug\" API endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "required": [
+                "flags",
+                "metrics"
+              ],
+              "type": "object",
+              "properties": {
+                "flags": {
+                  "title": "Value of `retentionFilter` and `retentionPeriod` flags",
+                  "description": "Commandline flags values for `retentionPeriod` and `retentionFilter`. For example: `-retentionPeriod=1y -retentionFilters={env!=\"prod\"}:2w`",
+                  "type": "string"
+                },
+                "metrics": {
+                  "pattern": "^([a-zA-Z_]*\\{\\s*(([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))?(\\s*,\\s*([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))*\\s*\\}\\n)+$",
+                  "title": "Metrics",
+                  "description": "Set of metrics to be debugged. The metrics should be in the format of <metric_name>{<label_name>=\"<label_value>\",...}.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___metric_relabel_debug",
+          "description": "Metric relabel debug tool can help with step-by-step debugging of Prometheus-compatible relabeling rules. It can be used to check how the relabeling rules are applied to the given metric. \nThe tool use \"/metric-relabel-debug\" endpoint of the VictoriaMetrics API. ",
+          "input_schema": {
+            "json": {
+              "required": [
+                "relabel_configs",
+                "metric"
+              ],
+              "type": "object",
+              "properties": {
+                "relabel_configs": {
+                  "description": "Prometheus-compatible relabeling rules",
+                  "title": "Relabel config",
+                  "type": "string"
+                },
+                "metric": {
+                  "description": "Set of metrics to be relabeled. The metrics should be in the format of {<label_name>=\"<label_value>\",...}.",
+                  "title": "Metrics",
+                  "pattern": "^\\{\\s*(([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))?(\\s*,\\s*([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))*\\s*\\}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___label_values",
+          "description": "List of label values from VictoriaMetrics instance for a provided label name. This tool uses `/api/v1/label/{labelName}/values` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "required": [
+                "label_name"
+              ],
+              "type": "object",
+              "properties": {
+                "start": {
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "description": "Start timestamp for selection labels values",
+                  "default": "",
+                  "title": "Start timestamp",
+                  "type": "string"
+                },
+                "label_name": {
+                  "description": "Name of the label to query its values",
+                  "type": "string",
+                  "title": "Label name",
+                  "pattern": "^.+$"
+                },
+                "limit": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "Maximum number of label values to return",
+                  "title": "Maximum number of label values"
+                },
+                "match": {
+                  "description": "Time series selector argument that selects the series from which to read the label values",
+                  "type": "string",
+                  "title": "Match series for labels values",
+                  "default": ""
+                },
+                "tenant": {
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "title": "Tenant name",
+                  "default": "0",
+                  "description": "Name of the tenant for which the list of label values will be displayed",
+                  "type": "string"
+                },
+                "end": {
+                  "default": "",
+                  "title": "End timestamp",
+                  "type": "string",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "description": "End timestamp for selection labels values"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___query",
+          "description": "Instant query executes PromQL or MetricsQL query expression at the given time. The result of Instant query is a list of time series matching the filter in query expression. Each returned series contains exactly one (timestamp, value) entry, where timestamp equals to the time query arg, while the value contains query result at the requested time. This tool uses `/api/v1/query` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "tenant": {
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "description": "Name of the tenant for which the data will be displayed",
+                  "default": "0",
+                  "type": "string",
+                  "title": "Tenant name"
+                },
+                "timeout": {
+                  "title": "Timeout",
+                  "description": "Optional query timeout. For example, timeout=5s. Query is canceled when the timeout is reached. By default the timeout is set to the value of -search.maxQueryDuration command-line flag passed to single-node VictoriaMetrics or to vmselect component of VictoriaMetrics cluster.",
+                  "pattern": "^([0-9]+)([a-z]+)$",
+                  "type": "string"
+                },
+                "time": {
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "title": "Timestamp",
+                  "type": "string",
+                  "description": "Timestamp in millisecond precision to evaluate the query at. If omitted, time is set to now() (current timestamp). The time param can be specified in multiple allowed formats."
+                },
+                "trace": {
+                  "type": "boolean",
+                  "description": "If true, the query will be traced and the trace will be returned in the response. This is useful for debugging and performance analysis.",
+                  "title": "Enable query trace",
+                  "default": false
+                },
+                "query": {
+                  "description": "MetricsQL or PromQL expression for the query of the data",
+                  "title": "MetricsQL or PromQL expression",
+                  "type": "string"
+                },
+                "nocache": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "If true, the query will not use the rollup cache on execution.",
+                  "title": "Disable cache"
+                },
+                "step": {
+                  "title": "Step",
+                  "pattern": "^([0-9]+)([a-z]+)$",
+                  "type": "string",
+                  "description": "Optional interval for searching for raw samples in the past when executing the query (used when a sample is missing at the specified time). For example, the request /api/v1/query?query=up&step=1m looks for the last written raw sample for the metric up in the (now()-1m, now()] interval (the first millisecond is not included). If omitted, step is set to 5m (5 minutes) by default."
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___downsampling_filters_debug",
+          "description": "Downsampling filters debug tool is used to debug flag \"downsampling.period\" with some series and see what downsampling strategy will be applied for which series in Enterprise version of VictoriaMetrics.\nThis tool use \"/downsampling-filters-debug\" API endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "flags": {
+                  "title": "Value of `downsampling.period` flag",
+                  "type": "string",
+                  "description": "Commandline flags values for `downsampling.period`. For example: `-downsampling.period={env=\"dev\"}:7d:5m,{env=\"dev\"}:30d:30m -downsampling.period=30d:1m -downsampling.period=60d:5m`"
+                },
+                "metrics": {
+                  "title": "Metrics",
+                  "type": "string",
+                  "pattern": "^([a-zA-Z_]*\\{\\s*(([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))?(\\s*,\\s*([a-zA-Z-_]+\\s*\\=\\s*\\\".*\\\"))*\\s*\\}\\n)+$",
+                  "description": "Set of metrics to be debugged. The metrics should be in the format of <metric_name>{<label_name>=\"<label_value>\",...}."
+                }
+              },
+              "required": [
+                "flags",
+                "metrics"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___tsdb_status",
+          "description": "The following tool returns various cardinality statistics about the VictoriaMetrics TSDB:\n- Metric names with the highest number of series.\n- Labels with the highest number of series.\n- Values with the highest number of series for the selected label (aka focusLabel).\n- label=name pairs with the highest number of series.\n- Labels with the highest number of unique values.\n\nThis tool returns TSDB stats from \"/api/v1/status/tsdb\" endpoint of VictoriaMetrics API (in the way similar to Prometheus).\n",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "match": {
+                  "title": "Match series selector",
+                  "default": "",
+                  "description": "Arbitrary time series selector for series to take into account during stats calculation. By default all the series are taken into account.",
+                  "type": "string"
+                },
+                "topN": {
+                  "title": "Top N",
+                  "type": "number",
+                  "minimum": 1,
+                  "default": 10,
+                  "description": "is the number of top entries to return in the response"
+                },
+                "tenant": {
+                  "default": "0",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "title": "Tenant name",
+                  "description": "Name of the tenant for which the TSDB stats will be displayed",
+                  "type": "string"
+                },
+                "extraLabel": {
+                  "default": "",
+                  "description": "Optional extra_label=<label_name>=<label_value> query arg, which can be used for enforcing additional label filters for queries. For example, /api/v1/query_range?extra_label=user_id=123&extra_label=group_id=456&query=<query> would automatically add {user_id=\"123\",group_id=\"456\"} label filters to the given <query>. This functionality can be used for limiting the scope of time series visible to the given tenant.",
+                  "title": "Extra label",
+                  "type": "string"
+                },
+                "focusLabel": {
+                  "title": "Focus label",
+                  "default": "",
+                  "description": "Returns label values with the highest number of time series for the given label name in the seriesCountByFocusLabelValue list.",
+                  "type": "string"
+                },
+                "date": {
+                  "description": "The date for collecting the stats. By default, the stats is collected for the current day. Pass date=1970-01-01 in order to collect global stats across all the days.",
+                  "title": "Date",
+                  "default": "",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___labels",
+          "description": "List of label names of the VictoriaMetrics instance. This tools uses `/api/v1/labels` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "limit": {
+                  "title": "Maximum number of label names",
+                  "type": "number",
+                  "default": 0,
+                  "minimum": 0,
+                  "description": "Maximum number of label names to return"
+                },
+                "match": {
+                  "title": "Match series for label names",
+                  "default": "",
+                  "description": "Time series selector argument that selects the series from which to read the label names",
+                  "type": "string"
+                },
+                "start": {
+                  "title": "Start timestamp",
+                  "type": "string",
+                  "description": "Start timestamp for selection labels names",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "default": ""
+                },
+                "end": {
+                  "default": "",
+                  "type": "string",
+                  "description": "End timestamp for selection labels names",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "title": "End timestamp"
+                },
+                "tenant": {
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "default": "0",
+                  "type": "string",
+                  "title": "Tenant name",
+                  "description": "Name of the tenant for which the list of labels will be displayed"
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___query_range",
+          "description": "Range query executes the query expression at the given [start…end] time range with the given step. The result of Range query is a list of time series matching the filter in query expression. Each returned series contains (timestamp, value) results for the query executed at start, start+step, start+2*step, …, start+N*step timestamps. In other words, Range query is an Instant query executed independently at start, start+step, …, start+N*step timestamps with the only difference that an instant query does not return ephemeral samples (see below). Instead, if the database does not contain any samples for the requested time and step, it simply returns an empty result. This tool uses `/api/v1/query_range` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "required": [
+                "query",
+                "start"
+              ],
+              "properties": {
+                "start": {
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "title": "Start timestamp",
+                  "description": "The starting timestamp of the time range for query evaluation",
+                  "type": "string"
+                },
+                "end": {
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "title": "End timestamp",
+                  "type": "string",
+                  "description": "The ending timestamp of the time range for query evaluation. If the end isn’t set, then the end is automatically set to the current time."
+                },
+                "nocache": {
+                  "default": false,
+                  "title": "Disable cache",
+                  "type": "boolean",
+                  "description": "If true, the query will not use the rollup cache on execution."
+                },
+                "query": {
+                  "description": "MetricsQL or PromQL expression for the query of the data",
+                  "title": "MetricsQL or PromQL expression",
+                  "type": "string"
+                },
+                "step": {
+                  "title": "Step",
+                  "type": "string",
+                  "description": "the interval between data points, which must be returned from the range query. The query is executed at start, start+step, start+2*step, …, start+N*step timestamps, where N is the whole number of steps that fit between start and end. end is included only when it equals to start+N*step. If the step isn’t set, then it default to 5m (5 minutes).",
+                  "pattern": "^([0-9]+)([a-z]+)$"
+                },
+                "trace": {
+                  "type": "boolean",
+                  "default": false,
+                  "title": "Enable query trace",
+                  "description": "If true, the query will be traced and the trace will be returned in the response. This is useful for debugging and performance analysis."
+                },
+                "tenant": {
+                  "title": "Tenant name",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "description": "Name of the tenant for which the data will be displayed",
+                  "type": "string",
+                  "default": "0"
+                },
+                "timeout": {
+                  "title": "Timeout",
+                  "type": "string",
+                  "pattern": "^([0-9]+)([a-z]+)$",
+                  "description": "optional query timeout. For example, timeout=5s. Query is canceled when the timeout is reached. By default the timeout is set to the value of -search.maxQueryDuration command-line flag passed to single-node VictoriaMetrics or to vmselect component in VictoriaMetrics cluster."
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___metric_statistics",
+          "description": "Statistics of metrics usage in queries of the VictoriaMetrics instance. This tool helps to identify unused (never queried) or rarely used metrics or conversely actively queried metrics. This tool uses `/api/v1/status/metric_names_stats` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "tenant": {
+                  "description": "Name of the tenant for which the metric query statistics will be displayed",
+                  "default": "0",
+                  "title": "Tenant name",
+                  "type": "string",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$"
+                },
+                "limit": {
+                  "default": 1000,
+                  "title": "Maximum number of metric names",
+                  "type": "number",
+                  "description": "Integer value to limit the number of metric names in response. By default, API returns 1000 records."
+                },
+                "le": {
+                  "title": "Less than or equal",
+                  "type": "number",
+                  "description": "less than or equal, is an integer threshold for filtering metric names by their usage count in queries. For example, with ?le=1 API returns metric names that were queried <=1 times."
+                },
+                "match_pattern": {
+                  "type": "string",
+                  "description": "A regex pattern to match metric names for showing usage statistics. For example, ?match_pattern=vm_ will match any metric names with vm_ pattern, like vm_http_requests, max_vm_memory_available.",
+                  "default": "",
+                  "title": "A regex pattern to match metric names"
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___metrics",
+          "description": "List of available metrics of the VictoriaMetrics instance. This tool uses `/api/v1/label/__name__/values` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "start": {
+                  "default": "",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "description": "Start timestamp for selection metric names",
+                  "type": "string",
+                  "title": "Start timestamp"
+                },
+                "end": {
+                  "description": "End timestamp for selection metric names",
+                  "pattern": "^((?:(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?))(Z|[\\+-]\\d{2}:\\d{2})?)|([0-9]+)$",
+                  "title": "End timestamp",
+                  "type": "string",
+                  "default": ""
+                },
+                "limit": {
+                  "description": "Maximum number of metric names to return",
+                  "minimum": 0,
+                  "title": "Maximum number of metric names",
+                  "type": "number",
+                  "default": 0
+                },
+                "match": {
+                  "title": "Match series for metric names",
+                  "default": "",
+                  "type": "string",
+                  "description": "Time series selector argument that selects the series from which to read the metrics"
+                },
+                "tenant": {
+                  "description": "Name of the tenant for which the list of metrics will be displayed",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$",
+                  "default": "0",
+                  "type": "string",
+                  "title": "Tenant name"
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___explain_query",
+          "description": "Explain how MetricsQL query works",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "query": {
+                  "description": "MetricsQL or PromQL expression for explanation",
+                  "type": "string",
+                  "title": "MetricsQL or PromQL expression"
+                }
+              },
+              "type": "object",
+              "required": [
+                "query"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___flags",
+          "description": "List of non-default flags (parameters) of the VictoriaMetrics instance. This tools uses `/flags` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___tenants",
+          "description": "List of tenants of the VictoriaMetrics instance.  This tool uses `/admin/tenants` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___test_rules",
+          "description": "Unit test alerting and recording rules. It use **[vmalert-tool](https://docs.victoriametrics.com/victoriametrics/vmalert-tool/)** under the hood . vmalert-tool unittest is compatible with Prometheus config format for tests.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "required": [
+                "rule_files",
+                "evaluation_interval",
+                "tests"
+              ],
+              "properties": {
+                "tests": {
+                  "items": {
+                    "properties": {
+                      "name": {
+                        "description": "Name of the test group, optional",
+                        "optional": true,
+                        "type": "string"
+                      },
+                      "external_labels": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "description": "External labels for the tests. This is not accessible for templating, use '-external.label' cmd-line flag instead.",
+                        "type": "object"
+                      },
+                      "metricsql_expr_test": {
+                        "description": "Unit tests for Metricsql expressions",
+                        "type": "array",
+                        "items": {
+                          "properties": {
+                            "expr": {
+                              "type": "string",
+                              "description": "Metricsql expression to evaluate"
+                            },
+                            "exp_series": {
+                              "description": "Expected samples at the given evaluation time.",
+                              "items": {
+                                "properties": {
+                                  "labels": {
+                                    "description": "Labels of the sample in usual series notation '<metric name>{<label name>=<label value>, ...}'. \nExamples:\n - series_name{label1=\"value1\", label2=\"value2\"}\n - go_goroutines{job=\"prometheus\", instance=\"localhost:9090\"}",
+                                    "type": "string"
+                                  },
+                                  "values": {
+                                    "description": "The expected value of the Metricsql expression.",
+                                    "type": "string"
+                                  }
+                                },
+                                "type": "object",
+                                "description": "Expected series configuration"
+                              },
+                              "type": "array"
+                            },
+                            "eval_time": {
+                              "description": "The time elapsed from time=0s when this expression should be checked.",
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "input_series": {
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "series": {
+                              "type": "string",
+                              "description": "series in the following format '<metric name>{<label name>=<label value>, ...}'. \nExamples:\n  - series_name{label1=\"value1\", label2=\"value2\"}\n  - go_goroutines{job=\"prometheus\", instance=\"localhost:9090\"}"
+                            },
+                            "values": {
+                              "type": "string",
+                              "description": "Values support several special equations:\n   'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'\n    Read this as series starts at a, then c further samples incrementing by b.\n   'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'\n    Read this as series starts at a, then c further samples decrementing by b (or incrementing by negative b).\n   '_' represents a missing sample from scrape\n   'stale' indicates a stale sample\nExamples:\n    1. '-2+4x3' becomes '-2 2 6 10' - series starts at -2, then 3 further samples incrementing by 4.\n    2. ' 1-2x4' becomes '1 -1 -3 -5 -7' - series starts at 1, then 4 further samples decrementing by 2.\n    3. ' 1x4' becomes '1 1 1 1 1' - shorthand for '1+0x4', series starts at 1, then 4 further samples incrementing by 0.\n    4. ' 1 _x3 stale' becomes '1 _ _ _ stale' - the missing sample cannot increment, so 3 missing samples are produced by "
+                            }
+                          }
+                        },
+                        "type": "array",
+                        "description": "Time series to persist into the database according to configured <interval> before running tests."
+                      },
+                      "alert_rule_test": {
+                        "description": "Unit tests for alerting rules",
+                        "items": {
+                          "properties": {
+                            "alertname": {
+                              "description": "Name of the alert to be tested.",
+                              "type": "string"
+                            },
+                            "eval_time": {
+                              "description": "The time elapsed from time=0s when this alerting rule should be checked. Means this rule should be firing at this point, or shouldn't be firing if 'exp_alerts' is empty.",
+                              "type": "string"
+                            },
+                            "exp_alerts": {
+                              "description": "List of the expected alerts that are firing under the given alertname at the given evaluation time. If you want to test if an alerting rule should not be firing, then you can mention only the fields above and leave 'exp_alerts' empty.",
+                              "items": {
+                                "properties": {
+                                  "exp_annotations": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    },
+                                    "description": "Annotations of the expected alert"
+                                  },
+                                  "exp_labels": {
+                                    "additionalProperties": {
+                                      "type": "string"
+                                    },
+                                    "description": "Labels of the expected alert",
+                                    "type": "object"
+                                  }
+                                },
+                                "description": "Expected alert configuration",
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "groupname": {
+                              "type": "string",
+                              "description": "Name of the group name to be tested."
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "interval": {
+                        "operational": true,
+                        "type": "string",
+                        "description": "Interval between samples for input series, in the format '1m', '5s', etc. default = evaluation_interval"
+                      }
+                    },
+                    "title": "Unit test group configuration",
+                    "type": "object"
+                  },
+                  "description": "The list of unit test files to be checked during evaluation. See \"vmalert-tool\" docs for details on the format of the tests.",
+                  "title": "List of unit tests",
+                  "type": "array"
+                },
+                "evaluation_interval": {
+                  "title": "Evaluation interval",
+                  "description": "Evaluation interval for the rules  specified in \"rule_files\". It should be in the format \"1m\", \"5s\", etc. This is used to determine how often the rules are evaluated.",
+                  "type": "string",
+                  "pattern": "^([0-9]+)([a-z]+)$"
+                },
+                "rule_files": {
+                  "title": "List of rule files contents in vmalert/prometheus format",
+                  "items": {
+                    "parameters": {
+                      "filename": {
+                        "description": "Optional filename for the rule file. If not provided, a default name will be used.",
+                        "type": "string"
+                      },
+                      "content": {
+                        "description": "Content of the rule file in vmalert/prometheus format. It should be a valid yaml string.",
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "description": "List of rule yaml files contents in vmalert/prometheus format. Each item in the list should be a string containing the yaml content of a rule file.",
+                  "type": "array"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___prettify_query",
+          "description": "Prettify (format) MetricsQL query. This tool uses `/prettify-query` endpoint of VictoriaMetrics API.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "tenant": {
+                  "default": "0",
+                  "description": "Name of the tenant for which the data will be displayed",
+                  "title": "Tenant name",
+                  "type": "string",
+                  "pattern": "^([0-9]+)(\\:[0-9]+)?$"
+                },
+                "query": {
+                  "type": "string",
+                  "description": "MetricsQL or PromQL expression for prettification. This is the query that will be formatted.",
+                  "title": "MetricsQL or PromQL expression"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "victoriametrics___documentation",
+          "description": "Search documentation resources for the given search query, returning the URIs of the resources that match the search criteria sorted by relevance. This tool can help to get context for any VictoriaMetrics related question.",
+          "input_schema": {
+            "json": {
+              "required": [
+                "query"
+              ],
+              "type": "object",
+              "properties": {
+                "query": {
+                  "title": "Search query",
+                  "type": "string",
+                  "description": "Query for search (for example, list of keywords)"
+                },
+                "limit": {
+                  "title": "Maximum number of results",
+                  "type": "number",
+                  "description": "Maximum number of results to return",
+                  "default": 30,
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    ],
+    "native___": [
+      {
+        "ToolSpecification": {
+          "name": "fs_write",
+          "description": "A tool for creating and editing files\n * The `create` command will override the file at `path` if it already exists as a file, and otherwise create a new file\n * The `append` command will add content to the end of an existing file, automatically adding a newline if the file doesn't end with one. The file must exist.\n Notes for using the `str_replace` command:\n * The `old_str` parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!\n * If the `old_str` parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in `old_str` to make it unique\n * The `new_str` parameter should contain the edited lines that should replace the `old_str`.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "file_text": {
+                  "description": "Required parameter of `create` command, with the content of the file to be created.",
+                  "type": "string"
+                },
+                "new_str": {
+                  "type": "string",
+                  "description": "Required parameter of `str_replace` command containing the new string. Required parameter of `insert` command containing the string to insert. Required parameter of `append` command containing the content to append to the file."
+                },
+                "insert_line": {
+                  "type": "integer",
+                  "description": "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`."
+                },
+                "old_str": {
+                  "description": "Required parameter of `str_replace` command containing the string in `path` to replace.",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Absolute path to file or directory, e.g. `/repo/file.py` or `/repo`.",
+                  "type": "string"
+                },
+                "summary": {
+                  "description": "A brief explanation of what the file change does or why it's being made.",
+                  "type": "string"
+                },
+                "command": {
+                  "enum": [
+                    "create",
+                    "str_replace",
+                    "insert",
+                    "append"
+                  ],
+                  "type": "string",
+                  "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`, `append`."
+                }
+              },
+              "required": [
+                "command",
+                "path"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "fs_read",
+          "description": "Tool for reading files (for example, `cat -n`),  directories (for example, `ls -la`) and images. If user has supplied paths that appear to be leading to images, you should use this tool right away using Image mode. The behavior of this tool is determined by the `mode` parameter. The available modes are:\n- line: Show lines in a file, given by an optional `start_line` and optional `end_line`.\n- directory: List directory contents. Content is returned in the \"long format\" of ls (that is, `ls -la`).\n- search: Search for a pattern in a file. The pattern is a string. The matching is case insensitive.\n\nExample Usage:\n1. Read all lines from a file: command=\"line\", path=\"/path/to/file.txt\"\n2. Read the last 5 lines from a file: command=\"line\", path=\"/path/to/file.txt\", start_line=-5\n3. List the files in the home directory: command=\"line\", path=\"~\"\n4. Recursively list files in a directory to a max depth of 2: command=\"line\", path=\"/path/to/directory\", depth=2\n5. Search for all instances of \"test\" in a file: command=\"search\", path=\"/path/to/file.txt\", pattern=\"test\"\n",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Pattern to search for (required, for Search mode). Case insensitive. The pattern matching is performed per line."
+                },
+                "context_lines": {
+                  "default": 2,
+                  "description": "Number of context lines around search results (optional, for Search mode)",
+                  "type": "integer"
+                },
+                "start_line": {
+                  "description": "Starting line number (optional, for Line mode). A negative index represents a line number starting from the end of the file.",
+                  "default": 1,
+                  "type": "integer"
+                },
+                "end_line": {
+                  "default": -1,
+                  "type": "integer",
+                  "description": "Ending line number (optional, for Line mode). A negative index represents a line number starting from the end of the file."
+                },
+                "depth": {
+                  "type": "integer",
+                  "default": 0,
+                  "description": "Depth of a recursive directory listing (optional, for Directory mode)"
+                },
+                "mode": {
+                  "type": "string",
+                  "description": "The mode to run in: `Line`, `Directory`, `Search`. `Line` and `Search` are only for text files, and `Directory` is only for directories. `Image` is for image files, in this mode `image_paths` is required.",
+                  "enum": [
+                    "Line",
+                    "Directory",
+                    "Search",
+                    "Image"
+                  ]
+                },
+                "image_paths": {
+                  "type": "array",
+                  "description": "List of paths to the images. This is currently supported by the Image mode.",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "path": {
+                  "description": "Path to the file or directory. The path should be absolute, or otherwise start with ~ for the user's home.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "mode"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "execute_bash",
+          "description": "Execute the specified bash command.",
+          "input_schema": {
+            "json": {
+              "properties": {
+                "summary": {
+                  "description": "A brief explanation of what the command does",
+                  "type": "string"
+                },
+                "command": {
+                  "description": "Bash command to execute",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "use_aws",
+          "description": "Make an AWS CLI api call with the specified service, operation, and parameters. All arguments MUST conform to the AWS CLI specification. Should the output of the invocation indicate a malformed command, invoke help to obtain the the correct command.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "profile_name": {
+                  "description": "Optional: AWS profile name to use from ~/.aws/credentials. Defaults to default profile if not specified.",
+                  "type": "string"
+                },
+                "parameters": {
+                  "description": "The parameters for the operation. The parameter keys MUST conform to the AWS CLI specification. You should prefer to use JSON Syntax over shorthand syntax wherever possible. For parameters that are booleans, prioritize using flags with no value. Denote these flags with flag names as key and an empty string as their value. You should also prefer kebab case.",
+                  "type": "object"
+                },
+                "operation_name": {
+                  "type": "string",
+                  "description": "The name of the operation to perform."
+                },
+                "region": {
+                  "type": "string",
+                  "description": "Region name for calling the operation on AWS."
+                },
+                "service_name": {
+                  "description": "The name of the AWS service. If you want to query s3, you should use s3api if possible.",
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Human readable description of the api that is being called."
+                }
+              },
+              "required": [
+                "region",
+                "service_name",
+                "operation_name",
+                "label"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "report_issue",
+          "description": "Opens the browser to a pre-filled gh (GitHub) issue template to report chat issues, bugs, or feature requests. Pre-filled information includes the conversation transcript, chat context, and chat request IDs from the service.",
+          "input_schema": {
+            "json": {
+              "type": "object",
+              "properties": {
+                "expected_behavior": {
+                  "description": "Optional: The expected chat behavior or action that did not happen.",
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "The title of the GitHub issue."
+                },
+                "actual_behavior": {
+                  "description": "Optional: The actual chat behavior that happened and demonstrates the issue or lack of a feature.",
+                  "type": "string"
+                },
+                "steps_to_reproduce": {
+                  "description": "Optional: Previous user chat requests or steps that were taken that may have resulted in the issue or error response.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "dummy",
+          "description": "This is a dummy tool. If you are seeing this that means the tool associated with this tool call is not in the list of available tools. This could be because a wrong tool name was supplied or the list of tools has changed since the conversation has started. Do not show this when user asks you to list tools.",
+          "input_schema": {
+            "json": {
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          }
+        }
+      }
+    ],
+    "elasticsearch_mcp_server": [
+      {
+        "ToolSpecification": {
+          "name": "elasticsearch_mcp_server___search",
+          "description": "Perform an Elasticsearch search with the provided query DSL. Highlights are always enabled.",
+          "input_schema": {
+            "json": {
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "properties": {
+                "index": {
+                  "minLength": 1,
+                  "description": "Name of the Elasticsearch index to search",
+                  "type": "string"
+                },
+                "queryBody": {
+                  "additionalProperties": {},
+                  "type": "object",
+                  "description": "Complete Elasticsearch query DSL object that can include query, size, from, sort, etc."
+                },
+                "explain": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Whether to include explanation of how the query was executed"
+                },
+                "profile": {
+                  "description": "Whether to include query profiling information",
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "index",
+                "queryBody"
+              ],
+              "type": "object"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "elasticsearch_mcp_server___get_mappings",
+          "description": "Get field mappings for a specific Elasticsearch index",
+          "input_schema": {
+            "json": {
+              "required": [
+                "index"
+              ],
+              "type": "object",
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "type": "string",
+                  "description": "Name of the Elasticsearch index to get mappings for",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "elasticsearch_mcp_server___list_indices",
+          "description": "List all available Elasticsearch indices",
+          "input_schema": {
+            "json": {
+              "additionalProperties": false,
+              "properties": {
+                "indexPattern": {
+                  "description": "Index pattern of Elasticsearch indices to list",
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "type": "object",
+              "required": [
+                "indexPattern"
+              ],
+              "$schema": "http://json-schema.org/draft-07/schema#"
+            }
+          }
+        }
+      },
+      {
+        "ToolSpecification": {
+          "name": "elasticsearch_mcp_server___get_shards",
+          "description": "Get shard information for all or specific indices",
+          "input_schema": {
+            "json": {
+              "additionalProperties": false,
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "properties": {
+                "index": {
+                  "description": "Optional index name to get shard information for",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "context_manager": {
+    "max_context_files_size": 150000,
+    "global_config": {
+      "paths": [
+        ".amazonq/rules/**/*.md",
+        "README.md",
+        "AmazonQ.md"
+      ],
+      "hooks": {}
+    },
+    "current_profile": "default",
+    "profile_config": {
+      "paths": [
+        "./ctx/sop.md",
+        "./ctx/schema.json",
+        "/home/ubuntu/huixin/aiops/aiops-qproxy-v2.4/ctx/sop.md"
+      ],
+      "hooks": {}
+    }
+  },
+  "context_message_length": null,
+  "latest_summary": null,
+  "model": "CLAUDE_SONNET_4_20250514_V1_0"
+}

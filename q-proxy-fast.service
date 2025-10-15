@@ -1,0 +1,23 @@
+[Unit]
+Description=Q Fast HTTP Proxy Service
+After=network.target q-gateway.service
+Wants=q-gateway.service
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/huixin/aiops_v2
+ExecStart=/usr/bin/python3 /home/ubuntu/huixin/aiops_v2/fast_proxy.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+MemoryMax=1G
+MemoryHigh=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

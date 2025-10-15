@@ -1,0 +1,84 @@
+{
+  "test_summary": {
+    "total_tests": 3,
+    "test_file": "sdn5_cpu.json",
+    "timestamp": "2025-10-14T03:48:11.978593"
+  },
+  "results": [
+    {
+      "test_number": 1,
+      "test_name": "SDN5_CPU_Analysis_1",
+      "timestamp": "2025-10-14T03:47:01.555228",
+      "sop_info": {
+        "incident_key": "unknown_unknown",
+        "sop_id": "ba113404",
+        "has_sop_file": false
+      },
+      "prompt_hash": "3dcd9cae0ba577b0d8d026351ddfae1a",
+      "prompt_length": 1117,
+      "prompt_preview": "## TASK INSTRUCTIONS\n\n# AIOps Root Cause Analysis Instructions\n\n## TASK: Analyze alerts and provide root cause analysis\n\nYou are an AIOps root cause analysis assistant. Your role is to:\n\n1. Perform AL...",
+      "payload_size": 1351,
+      "status": "success",
+      "latency_seconds": 12.831,
+      "response_chunks_count": 100,
+      "response_content_length": 218,
+      "response_preview": "> {\"tool_calls\":[{\"tool\":\"victoriametrics\",\"action\":\"query\",\"query\":\"sum(rate(container_cpu_usage_seconds_total{container!=\\\"POD\\\",container!=\\\"\\\",container!=\\\"istio-proxy\\\",image!=\\\"\\\",pod=~\\\"omada-device-gateway.*\\\",",
+      "analysis": {
+        "contains_cpu_analysis": true,
+        "contains_root_cause": false,
+        "contains_suggestions": false,
+        "contains_false_positive": false,
+        "tool_calls_found": false,
+        "analysis_complete": false
+      },
+      "conversation_reused": false,
+      "sop_content_found": false
+    },
+    {
+      "test_number": 2,
+      "test_name": "SDN5_CPU_Analysis_2",
+      "timestamp": "2025-10-14T03:47:23.905911",
+      "sop_info": {
+        "incident_key": "unknown_unknown",
+        "sop_id": "ba113404",
+        "has_sop_file": false
+      },
+      "prompt_hash": "3dcd9cae0ba577b0d8d026351ddfae1a",
+      "prompt_length": 1117,
+      "prompt_preview": "## TASK INSTRUCTIONS\n\n# AIOps Root Cause Analysis Instructions\n\n## TASK: Analyze alerts and provide root cause analysis\n\nYou are an AIOps root cause analysis assistant. Your role is to:\n\n1. Perform AL...",
+      "payload_size": 1351,
+      "status": "success",
+      "latency_seconds": 0.003,
+      "response_chunks_count": 4,
+      "response_content_length": 0,
+      "response_preview": "",
+      "analysis": {
+        "contains_cpu_analysis": false,
+        "contains_root_cause": false,
+        "contains_suggestions": false,
+        "contains_false_positive": false,
+        "tool_calls_found": false,
+        "analysis_complete": false
+      },
+      "conversation_reused": false,
+      "sop_content_found": false
+    },
+    {
+      "test_number": 3,
+      "test_name": "SDN5_CPU_Analysis_3",
+      "timestamp": "2025-10-14T03:47:41.948723",
+      "sop_info": {
+        "incident_key": "unknown_unknown",
+        "sop_id": "ba113404",
+        "has_sop_file": false
+      },
+      "prompt_hash": "3dcd9cae0ba577b0d8d026351ddfae1a",
+      "prompt_length": 1117,
+      "prompt_preview": "## TASK INSTRUCTIONS\n\n# AIOps Root Cause Analysis Instructions\n\n## TASK: Analyze alerts and provide root cause analysis\n\nYou are an AIOps root cause analysis assistant. Your role is to:\n\n1. Perform AL...",
+      "payload_size": 1351,
+      "status": "exception",
+      "latency_seconds": 30.03,
+      "exception": "HTTPConnectionPool(host='127.0.0.1', port=8081): Read timed out. (read timeout=30)"
+    }
+  ]
+}

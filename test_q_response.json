@@ -1,9 +1,0 @@
-{
-  "message": "What is the current time?",
-  "context": {
-    "alert": {
-      "alertname": "test",
-      "severity": "info"
-    }
-  }
-}

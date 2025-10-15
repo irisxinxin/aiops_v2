@@ -265,7 +265,7 @@ class TerminalAPIClient:
         self._set_state(TerminalBusinessState.UNAVAILABLE)
         await self._connection_manager.disconnect()
     
-    async def execute_command_stream(self, command: str, silence_timeout: float = 10.0) -> AsyncIterator[Dict[str, Any]]:
+    async def execute_command_stream(self, command: str, silence_timeout: float = 5.0) -> AsyncIterator[Dict[str, Any]]:
         """
         执行命令并返回流式输出（异步迭代器）- 基于统一数据流架构
         

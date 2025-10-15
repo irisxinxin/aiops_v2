@@ -1,0 +1,13 @@
+{
+  "success": false,
+  "error": "Analysis completed but no structured result found",
+  "elapsed_time": 0.57,
+  "conversation_loaded": false,
+  "status_messages": [
+    "加载对话上下文 sdn5_cpu_critical_dev-nbu-aps1_sdn5-container-cpu-usage-is-too-high_sdn5_critical-4d5bc8b4cd...",
+    "开始新对话",
+    "开始分析...",
+    "保存对话上下文 sdn5_cpu_critical_dev-nbu-aps1_sdn5-container-cpu-usage-is-too-high_sdn5_critical-4d5bc8b4cd..."
+  ],
+  "raw_content": ""
+}

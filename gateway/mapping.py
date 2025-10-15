@@ -33,4 +33,3 @@ def sop_id_from_incident_key(incident_key: str) -> str:
     """将 incident_key 规范化为 sop_id（同名即可）。"""
     return incident_key.replace(" ", "-").replace("/", "-").lower()
 
-

@@ -17,11 +17,12 @@ Environment=TASK_DOC_PATH=/home/ubuntu/huixin/aiops_v2/task_instructions.md
 Environment=QTTY_HOST=127.0.0.1
 Environment=QTTY_PORT=7682
 Environment=QTTY_PING=55
+Environment=QTTY_TIMEOUT=20
 Environment=ALERT_JSON_PRETTY=1
 
 # Service execution
-ExecStartPre=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
-ExecStart=/home/ubuntu/huixin/aiops_v2/gateway/systemd_start.sh
+ExecStartPre=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true; sleep 2'
+ExecStart=/home/ubuntu/huixin/aiops_v2/gateway/start.sh
 ExecStop=/bin/bash -c 'pkill -f "uvicorn.*app:app" || true; pkill -f "ttyd.*q_entry.sh" || true'
 ExecReload=/bin/kill -HUP $MAINPID
 
@@ -34,10 +35,10 @@ TimeoutStopSec=30
 KillSignal=SIGTERM
 
 # Resource limits
-MemoryMax=2G
-MemoryHigh=1.5G
-CPUQuota=200%
-TasksMax=100
+MemoryMax=4G
+MemoryHigh=3G
+CPUQuota=300%
+TasksMax=200
 
 # Security
 NoNewPrivileges=true
