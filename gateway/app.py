@@ -418,13 +418,18 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         pc, _ = await pool.acquire()
 
         async def _inner():
-            # 已持久连接，直接执行
-            async for chunk in pc.client.execute_command_stream(text):
-                t = chunk.get("type")
+            # 确保有换行并发送
+            prompt = (text or "").rstrip("\n") + "\n"
+            if not prompt.strip():
+                raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
+            print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")
+            await pc.client.send_text(prompt)
+            async for ev in pc.client.stream():
+                t = ev.get("type")
                 if t == "content":
-                    out_chunks.append(chunk.get("content", ""))
+                    out_chunks.append(ev.get("data") or ev.get("content") or ev.get("text") or "")
                 elif t in ("notification", "tool", "error"):
-                    events.append(chunk)
+                    events.append(ev)
                 elif t == "complete":
                     break
 
