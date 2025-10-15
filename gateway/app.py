@@ -190,6 +190,12 @@ async def ask_json(request: Request):
     if not user_text:
         raise HTTPException(400, "text required")
 
+    # 斜杠命令必须显式提供 sop_id，避免会话未定位导致阻塞
+    if user_text.startswith("/"):
+        explicit_sop = str(body.get("sop_id", "")).strip()
+        if not explicit_sop:
+            raise HTTPException(400, "slash command requires explicit sop_id")
+
     sop_id = _resolve_sop_id(body)
     workdir = SESSION_ROOT / sop_id
     workdir.mkdir(parents=True, exist_ok=True)
@@ -210,7 +216,21 @@ async def ask_json(request: Request):
             print(f"Load error: {e}")
             loaded = False
 
-    # ask
+    # 斜杠命令：直接透传（不拼接 TASK/SOP/ALERT），并为 /save 补充 -f
+    if user_text.startswith("/"):
+        slash_cmd = user_text
+        if slash_cmd.startswith("/save") and " -f" not in slash_cmd and " --force" not in slash_cmd:
+            slash_cmd += " -f"
+        t0 = time.time()
+        res = await _run_q_collect(sop_id, slash_cmd)
+        took_ms = int((time.time() - t0) * 1000)
+        out = {"ok": res["ok"], "sop_id": sop_id, "loaded": False, "saved": False,
+               "took_ms": took_ms, "output": _improve_json_readability(res.get("output", "")),
+               "events": res.get("events", []), "error": res.get("error", "")}
+        code = 200 if out["ok"] else 504
+        return JSONResponse(out, status_code=code)
+
+    # 普通问答：构建 Prompt 后再请求
     prompt = _build_prompt(body, sop_id, user_text)
     t0 = time.time()
     res = await _run_q_collect(sop_id, prompt)
