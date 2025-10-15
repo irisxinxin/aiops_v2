@@ -32,7 +32,7 @@ if [ -z "$Q_CMD" ]; then
 fi
 
 # 会话日志目录（便于线上排障）
-LOG_DIR="$(dirname "$PROJECT_DIR")/logs"
+LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
 echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$LOG_DIR/q_entry.log"
 
