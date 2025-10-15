@@ -31,6 +31,12 @@ if [ -z "$Q_CMD" ]; then
   fi
 fi
 
-# 启动会话（工具信任，自动续会话）
-exec "$Q_CMD" chat --trust-all-tools --resume
+# 会话日志目录（便于线上排障）
+LOG_DIR="$(dirname "$PROJECT_DIR")/logs"
+mkdir -p "$LOG_DIR"
+echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$LOG_DIR/q_entry.log"
+
+# 启动会话（工具信任，自动续会话）并记录日志
+exec "$Q_CMD" chat --trust-all-tools --resume \
+  >>"$LOG_DIR/q_${SOP_ID}.out" 2>&1
 
