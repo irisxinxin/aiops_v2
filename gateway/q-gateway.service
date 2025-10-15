@@ -15,6 +15,7 @@ Environment=PYTHONPATH=/home/ubuntu/huixin/aiops_v2
 Environment=SOP_DIR=/home/ubuntu/huixin/aiops_v2/sop
 Environment=TASK_DOC_PATH=/home/ubuntu/huixin/aiops_v2/task_instructions.md
 Environment=SESSION_ROOT=/home/ubuntu/huixin/aiops_v2/q-sessions
+Environment=HOME=/home/ubuntu
 Environment=QTTY_HOST=127.0.0.1
 Environment=QTTY_PORT=7682
 Environment=QTTY_PING=55
@@ -47,11 +48,12 @@ TasksMax=100
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-# 允许进入 /home 目录（read-only 即可满足 chdir 和读取 .venv）
-ProtectHome=read-only
+# 放开 HOME，允许 q 写入凭据/缓存
+ProtectHome=no
 # 允许写入工作目录与会话目录
 ReadWritePaths=/home/ubuntu/huixin/aiops_v2
 ReadWritePaths=/home/ubuntu/huixin/aiops_v2/q-sessions
+ReadWritePaths=/home/ubuntu/huixin/aiops_v2/logs
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

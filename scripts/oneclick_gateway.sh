@@ -8,8 +8,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 echo "[1/6] Ensure session root and permissions"
-sudo mkdir -p /srv/q-sessions
-sudo chown -R ubuntu:ubuntu /srv/q-sessions || true
+mkdir -p q-sessions logs
+sudo chown -R ubuntu:ubuntu q-sessions logs || true
 
 echo "[2/6] Ensure Python venv and deps"
 if [ ! -d .venv ]; then
