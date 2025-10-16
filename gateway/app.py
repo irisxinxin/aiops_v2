@@ -321,19 +321,23 @@ class _QPool:
                             break
 
                 try:
+                    print(f"[pool] init begin sop={self.sop_id} host={HOST} port={PORT}")
                     cli = TerminalAPIClient(
                         host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
                         url_query={"arg": self.sop_id}
                     )
                     ok = await cli.initialize()
+                    print(f"[pool] init done sop={self.sop_id} ok={ok}")
                     if ok:
                         self._clients.append(_PooledClient(cli))
+                        print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
                     else:
                         # 初始化失败，回收全局名额
                         async with _GLOBAL_LOCK:
                             _GLOBAL_CONN -= 1
                         break
-                except Exception:
+                except Exception as e:
+                    print(f"[pool] init error sop={self.sop_id} err={e}")
                     # 异常也需回收名额
                     async with _GLOBAL_LOCK:
                         _GLOBAL_CONN -= 1
@@ -349,6 +353,7 @@ class _QPool:
                 if not pc.lock.locked():
                     await pc.lock.acquire()
                     pc.last_used = time.time()
+                    print(f"[pool] acquire sop={self.sop_id} idx={idx}")
                     return pc, idx
             await asyncio.sleep(0.01)
             waited += 1
@@ -415,6 +420,8 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
     out_chunks: List[str] = []
     events: List[Dict[str, Any]] = []
 
+    print(f"[collect] start sop={sop_id} timeout={timeout}")
+
     pool = _get_pool(sop_id)
     pc: _PooledClient
     try:
@@ -435,6 +442,7 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
                 elif t in ("notification", "tool", "error"):
                     events.append(ev)
                 elif t == "complete":
+                    print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
                     break
 
         await asyncio.wait_for(_inner(), timeout=timeout)
@@ -443,13 +451,16 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
     except asyncio.TimeoutError:
         ok = False
         err = f"timeout after {timeout}s"
+        print(f"[collect] timeout sop={sop_id} err={err}")
     except Exception as e:
         ok = False
         err = str(e)
+        print(f"[collect] error sop={sop_id} err={e}")
     finally:
         # 释放连接
         try:
             await pool.release(pc)
+            print(f"[pool] release sop={sop_id}")
         except Exception:
             pass
 
