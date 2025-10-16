@@ -55,6 +55,9 @@ def _load_sop_text(sop_id: str) -> str:
             except Exception:
                 pass
     for p in sorted(SOP_DIR.glob("*.jsonl")):
+        # 跳过映射记录文件，避免将其当作 SOP 正文命中
+        if p.name == "incident_sop_map.jsonl":
+            continue
         try:
             with p.open("r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -65,7 +68,7 @@ def _load_sop_text(sop_id: str) -> str:
                         obj = json.loads(line)
                     except Exception:
                         continue
-                    if isinstance(obj, dict) and str(obj.get("sop_id","" )).strip() == sop_id:
+                    if isinstance(obj, dict) and str(obj.get("sop_id","")) .strip() == sop_id:
                         # 1) direct text fields
                         for key in ("sop","content","text","body"):
                             v = obj.get(key)
@@ -423,6 +426,7 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             if not prompt.strip():
                 raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")
+            
             await pc.client.send_text(prompt)
             async for ev in pc.client.stream():
                 t = ev.get("type")
