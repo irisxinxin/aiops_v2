@@ -30,7 +30,8 @@ class TerminalAPIClient:
     def __init__(self, host: str = "localhost", port: int = 7681,
                  username: str = "demo", password: str = "password123",
                  use_ssl: bool = False, terminal_type: TerminalType = TerminalType.GENERIC,
-                 format_output: bool = True, ttyd_query: str | None = None):
+                 format_output: bool = True, ttyd_query: str | None = None,
+                 url_query: Optional[Dict[str, str]] = None):
         """
         初始化终端API客户端
         
@@ -48,10 +49,22 @@ class TerminalAPIClient:
         self.terminal_type = terminal_type
         self.format_output = format_output
         
+        # 生成 URL 查询串（优先 url_query，其次 ttyd_query，最终传给底层）
+        query_str: Optional[str] = None
+        if url_query:
+            try:
+                from urllib.parse import urlencode
+                query_str = urlencode(url_query)
+            except Exception:
+                # 简单拼接
+                query_str = "&".join([f"{k}={v}" for k, v in url_query.items()])
+        elif ttyd_query:
+            query_str = ttyd_query
+
         # 初始化组件
         self._connection_manager = ConnectionManager(
             host=host, port=port, username=username, password=password,
-            use_ssl=use_ssl, terminal_type=terminal_type.value, query=ttyd_query
+            use_ssl=use_ssl, terminal_type=terminal_type.value, query=query_str
         )
         
         self._command_executor = CommandExecutor(
