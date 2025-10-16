@@ -276,6 +276,7 @@ async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict
 QTTY_MAX_CONN = int(os.getenv("QTTY_MAX_CONN", "20"))
 _GLOBAL_CONN = 0
 _GLOBAL_LOCK: Lock = Lock()
+INIT_WAIT = float(os.getenv("INIT_WAIT", "5"))  # 非阻塞初始化等待秒数
 
 
 class _PooledClient:
@@ -326,16 +327,16 @@ class _QPool:
                         host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
                         url_query={"arg": self.sop_id}
                     )
-                    ok = await cli.initialize()
-                    print(f"[pool] init done sop={self.sop_id} ok={ok}")
-                    if ok:
-                        self._clients.append(_PooledClient(cli))
-                        print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
-                    else:
-                        # 初始化失败，回收全局名额
-                        async with _GLOBAL_LOCK:
-                            _GLOBAL_CONN -= 1
-                        break
+                    # 改为非阻塞：只等待短时间建立协议连接，不等待提示符
+                    conn_ok = False
+                    try:
+                        conn_ok = await asyncio.wait_for(cli._connection_manager.connect(), timeout=INIT_WAIT)
+                    except asyncio.TimeoutError:
+                        conn_ok = False
+                    print(f"[pool] init(short) sop={self.sop_id} connected={conn_ok}")
+                    # 无论是否在 INIT_WAIT 内完成，先加入池，后续 send_text 会触发就绪
+                    self._clients.append(_PooledClient(cli))
+                    print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
                 except Exception as e:
                     print(f"[pool] init error sop={self.sop_id} err={e}")
                     # 异常也需回收名额
