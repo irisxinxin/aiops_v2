@@ -323,7 +323,7 @@ class _QPool:
                 try:
                     cli = TerminalAPIClient(
                         host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
-                        ttyd_query=f"arg={self.sop_id}"
+                        url_query={"arg": self.sop_id}
                     )
                     ok = await cli.initialize()
                     if ok:
