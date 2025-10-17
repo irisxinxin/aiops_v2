@@ -7,6 +7,7 @@ Terminal API Client
 import asyncio
 import logging
 import time
+import os
 from typing import Optional, Callable, Dict, Any, AsyncIterator
 from enum import Enum
 from .connection_manager import ConnectionManager
@@ -90,6 +91,8 @@ class TerminalAPIClient:
         
         # 订阅连接状态变化
         self._connection_manager.set_state_change_callback(self._handle_connection_state_change)
+        # 初始化就绪超时时间（秒）- 超时则宽松视为就绪
+        self._init_ready_timeout_s: float = float(os.getenv("INIT_READY_TIMEOUT", "5"))
     
     @property
     def is_connected(self) -> bool:
@@ -254,14 +257,17 @@ class TerminalAPIClient:
 
             logger.info("网络连接成功")
             
-            # 2. 消费初始化消息（所有终端类型都需要）
+            # 2. 消费初始化消息（QCLI可能较慢），限时等待；超时也继续
             self._set_state(TerminalBusinessState.INITIALIZING)
-            await self._consume_initialization_messages()
+            try:
+                await asyncio.wait_for(self._consume_initialization_messages(), timeout=self._init_ready_timeout_s)
+            except asyncio.TimeoutError:
+                logger.warning(f"初始化等待超时 {self._init_ready_timeout_s}s，继续进入就绪状态（宽松模式）")
             
             # 3. 设置正常的消息处理流程
             self._setup_normal_message_handling()
             
-            # 4. 进入空闲状态，可以接受命令
+            # 4. 进入空闲状态，可以接受命令（即便未检测到提示符也放行）
             self._set_state(TerminalBusinessState.IDLE)
             logger.info("终端初始化完成，可以开始用户交互")
             
