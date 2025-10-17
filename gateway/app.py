@@ -289,99 +289,87 @@ class _PooledClient:
 class _QPool:
     def __init__(self, sop_id: str, size: int = 1):
         self.sop_id = sop_id
-        self.size = size
+        self.size = 1  # 简化为单连接
         self._clients: List[_PooledClient] = []
-        self._init_lock: Lock = Lock()
 
-    async def _ensure_min_clients(self):
+    async def _ensure_client(self) -> bool:
+        """如无客户端则懒创建一个；达到全局上限时尝试淘汰一条空闲连接。"""
         global _GLOBAL_CONN
-        async with self._init_lock:
-            while len(self._clients) < self.size:
-                # 全局连接上限控制
-                acquired_global = False
-                for _ in range(300):  # 最长约3s等待全局额度
-                    async with _GLOBAL_LOCK:
-                        if _GLOBAL_CONN < QTTY_MAX_CONN:
-                            _GLOBAL_CONN += 1
-                            acquired_global = True
-                            break
-                    await asyncio.sleep(0.01)
-
-                if not acquired_global:
-                    # 全局连接已达上限，尝试淘汰一个空闲连接
-                    evicted = await _evict_one_idle()
-                    if not evicted:
-                        # 无可淘汰连接，放弃创建
-                        break
-                    # 淘汰成功后继续重试一次获取额度
-                    async with _GLOBAL_LOCK:
-                        if _GLOBAL_CONN < QTTY_MAX_CONN:
-                            _GLOBAL_CONN += 1
-                            acquired_global = True
-                        else:
-                            # 极端情况下仍不可用
-                            break
-
+        if self._clients:
+            return True
+        # 全局额度
+        acquired = False
+        async with _GLOBAL_LOCK:
+            if _GLOBAL_CONN < QTTY_MAX_CONN:
+                _GLOBAL_CONN += 1
+                acquired = True
+        if not acquired:
+            # 尝试淘汰任意空闲
+            evicted = await _evict_one_idle()
+            if not evicted:
+                return False
+            async with _GLOBAL_LOCK:
+                if _GLOBAL_CONN < QTTY_MAX_CONN:
+                    _GLOBAL_CONN += 1
+                    acquired = True
+        if not acquired:
+            return False
+        # 创建并短等初始化
+        try:
+            print(f"[pool] create sop={self.sop_id} host={HOST} port={PORT}")
+            cli = TerminalAPIClient(
+                host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
+                url_query={"arg": self.sop_id}
+            )
+            ok = False
+            try:
+                ok = await asyncio.wait_for(cli.initialize(), timeout=INIT_WAIT)
+            except asyncio.TimeoutError:
+                ok = False
+            except Exception:
+                ok = False
+            if not ok:
                 try:
-                    print(f"[pool] init begin sop={self.sop_id} host={HOST} port={PORT}")
-                    cli = TerminalAPIClient(
-                        host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
-                        url_query={"arg": self.sop_id}
-                    )
+                    await cli._connection_manager.connect()
+                    cli._setup_normal_message_handling()
+                    cli._set_state(TerminalBusinessState.IDLE)
+                    ok = True
+                except Exception as e2:
+                    print(f"[pool] fallback setup failed sop={self.sop_id} err={e2}")
                     ok = False
-                    # 优先尝试有限时 initialize（设置消息管道与状态）
-                    try:
-                        ok = await asyncio.wait_for(cli.initialize(), timeout=INIT_WAIT)
-                    except asyncio.TimeoutError:
-                        ok = False
-                    except Exception:
-                        ok = False
-                    if not ok:
-                        # 回退：至少建立连接并设置消息处理，置为空闲
-                        try:
-                            await cli._connection_manager.connect()
-                            cli._setup_normal_message_handling()
-                            cli._set_state(TerminalBusinessState.IDLE)
-                            ok = True
-                        except Exception as e2:
-                            print(f"[pool] fallback setup failed sop={self.sop_id} err={e2}")
-                            ok = False
-                    print(f"[pool] init(short) sop={self.sop_id} ready={ok}")
-                    if ok:
-                        self._clients.append(_PooledClient(cli))
-                        print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
-                    else:
-                        async with _GLOBAL_LOCK:
-                            _GLOBAL_CONN -= 1
-                        break
-                except Exception as e:
-                    print(f"[pool] init error sop={self.sop_id} err={e}")
-                    async with _GLOBAL_LOCK:
-                        _GLOBAL_CONN -= 1
-                    break
+            if ok:
+                self._clients.append(_PooledClient(cli))
+                print(f"[pool] ready sop={self.sop_id} size=1")
+                return True
+        except Exception as e:
+            print(f"[pool] create error sop={self.sop_id} err={e}")
+        # 失败则回收全局额度
+        async with _GLOBAL_LOCK:
+            if _GLOBAL_CONN > 0:
+                _GLOBAL_CONN -= 1
+        return False
 
     async def acquire(self) -> Tuple[_PooledClient, int]:
-        await self._ensure_min_clients()
-        # 简单轮询：寻找空闲连接
-        # 若都繁忙，等待任一连接释放
+        have = await self._ensure_client()
+        if not have:
+            raise HTTPException(503, "no available connection (global cap)")
+        pc = self._clients[0]
         waited = 0
-        while True:
-            for idx, pc in enumerate(self._clients):
-                if not pc.lock.locked():
-                    await pc.lock.acquire()
-                    pc.last_used = time.time()
-                    print(f"[pool] acquire sop={self.sop_id} idx={idx}")
-                    return pc, idx
+        while pc.lock.locked():
             await asyncio.sleep(0.01)
             waited += 1
-            if waited > 30000 and not self._clients:
-                # 等待超时且无可用连接
-                raise HTTPException(503, "no available connection for sop_id")
+            if waited > 30000:
+                raise HTTPException(503, "acquire timeout")
+        await pc.lock.acquire()
+        pc.last_used = time.time()
+        print(f"[pool] acquire sop={self.sop_id} idx=0")
+        return pc, 0
 
     async def release(self, pc: _PooledClient):
         if pc.lock.locked():
             pc.lock.release()
-            # 连接保持，不回收；若未来需要关闭，可在此实现空闲回收并减少 _GLOBAL_CONN
+            print(f"[pool] release sop={self.sop_id}")
+            # 连接保持常驻
 
 
 async def _evict_one_idle() -> bool:
