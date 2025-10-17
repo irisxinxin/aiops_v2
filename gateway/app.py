@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 sys.path.append("/opt/terminal-api-for-qcli")
 from api import TerminalAPIClient
 from api.data_structures import TerminalType
+from api.terminal_api_client import TerminalBusinessState
 
 from gateway.mapping import build_incident_key_from_alert, sop_id_from_incident_key
 
@@ -327,19 +328,34 @@ class _QPool:
                         host=HOST, port=PORT, terminal_type=TerminalType.QCLI,
                         url_query={"arg": self.sop_id}
                     )
-                    # 改为非阻塞：只等待短时间建立协议连接，不等待提示符
-                    conn_ok = False
+                    ok = False
+                    # 优先尝试有限时 initialize（设置消息管道与状态）
                     try:
-                        conn_ok = await asyncio.wait_for(cli._connection_manager.connect(), timeout=INIT_WAIT)
+                        ok = await asyncio.wait_for(cli.initialize(), timeout=INIT_WAIT)
                     except asyncio.TimeoutError:
-                        conn_ok = False
-                    print(f"[pool] init(short) sop={self.sop_id} connected={conn_ok}")
-                    # 无论是否在 INIT_WAIT 内完成，先加入池，后续 send_text 会触发就绪
-                    self._clients.append(_PooledClient(cli))
-                    print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
+                        ok = False
+                    except Exception:
+                        ok = False
+                    if not ok:
+                        # 回退：至少建立连接并设置消息处理，置为空闲
+                        try:
+                            await cli._connection_manager.connect()
+                            cli._setup_normal_message_handling()
+                            cli._set_state(TerminalBusinessState.IDLE)
+                            ok = True
+                        except Exception as e2:
+                            print(f"[pool] fallback setup failed sop={self.sop_id} err={e2}")
+                            ok = False
+                    print(f"[pool] init(short) sop={self.sop_id} ready={ok}")
+                    if ok:
+                        self._clients.append(_PooledClient(cli))
+                        print(f"[pool] ready sop={self.sop_id} size={len(self._clients)}")
+                    else:
+                        async with _GLOBAL_LOCK:
+                            _GLOBAL_CONN -= 1
+                        break
                 except Exception as e:
                     print(f"[pool] init error sop={self.sop_id} err={e}")
-                    # 异常也需回收名额
                     async with _GLOBAL_LOCK:
                         _GLOBAL_CONN -= 1
                     break
@@ -434,14 +450,13 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             if not prompt.strip():
                 raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")
-            
-            await pc.client.send_text(prompt)
-            async for ev in pc.client.stream():
-                t = ev.get("type")
+            # 使用 execute_command_stream 以稳定的统一数据流
+            async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
+                t = chunk.get("type")
                 if t == "content":
-                    out_chunks.append(ev.get("data") or ev.get("content") or ev.get("text") or "")
+                    out_chunks.append(chunk.get("content", ""))
                 elif t in ("notification", "tool", "error"):
-                    events.append(ev)
+                    events.append(chunk)
                 elif t == "complete":
                     print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
                     break
