@@ -543,59 +543,12 @@ async def ask_json(request: Request):
     attempts = []
     sop_used = sop_id
 
-    # 1) 首次：允许工具
+    # 仅发送一次：允许工具
     prompt = _build_prompt(body, sop_id, allow_tools=True)
     _log_prompt(sop_id, prompt)
     t0 = time.time()
     res = await _run_q_collect(sop_id, prompt, timeout=Q_OVERALL_TIMEOUT)
-    attempts.append({"allow_tools": True, "took_ms": int((time.time()-t0)*1000), "ok": res["ok"]})
-
-    # 2) 若工具未就绪：等待 TOOL_RETRY_WAIT 秒，再“允许工具”重试 N 次
-    retried_with_tools = False
-    if _looks_like_tool_unavailable(res.get("output", "")) and TOOL_RETRY_COUNT > 0:
-        retried_with_tools = True
-        for _ in range(TOOL_RETRY_COUNT):
-            await asyncio.sleep(TOOL_RETRY_WAIT)
-            prompt2 = _build_prompt(body, sop_id, allow_tools=True)
-            _log_prompt(sop_id, prompt2)
-            t1 = time.time()
-            res2 = await _run_q_collect(sop_id, prompt2, timeout=Q_OVERALL_TIMEOUT)
-            attempts.append({"allow_tools": True, "took_ms": int((time.time()-t1)*1000), "ok": res2["ok"]})
-            if res2["ok"] and not _looks_like_tool_unavailable(res2.get("output", "")):
-                res = res2
-                break
-
-    # 3) 仍失败/仍提示工具未就绪 → 禁用工具离线分析（一次）
-    fell_back_offline = False
-    if OFFLINE_FALLBACK and (not res["ok"] or _looks_like_tool_unavailable(res.get("output", ""))):
-        fell_back_offline = True
-
-        # 生成 alert_id，作为边界标记
-        def _alert_id(alert: dict) -> str:
-            try:
-                blob = json.dumps(alert, ensure_ascii=False, sort_keys=True)
-            except Exception:
-                blob = str(alert)
-            import hashlib
-            return hashlib.sha1(blob.encode("utf-8", "ignore")).hexdigest()[:12]
-
-        aid = _alert_id(body.get("alert", {})) if isinstance(body.get("alert"), dict) else None
-
-        # 离线兜底：禁工具 + 边界提示，且使用“冷目录”避免历史影响
-        prompt_off = _build_prompt(body, sop_id, allow_tools=False, boundary_id=aid)
-        _log_prompt(sop_id, prompt_off)
-        sop_id_off = f"{sop_id}__offline"
-        (SESSION_ROOT / sop_id_off).mkdir(parents=True, exist_ok=True)
-        sop_used = sop_id_off
-
-        t2 = time.time()
-        res = await _run_q_collect(sop_id_off, prompt_off, timeout=Q_OVERALL_TIMEOUT)
-        attempts.append({
-            "allow_tools": False,
-            "cold_dir": True,
-            "took_ms": int((time.time()-t2)*1000),
-            "ok": res["ok"]
-        })
+    attempts.append({"allow_tools": True, "took_ms": int((time.time()-t0)*1000), "ok": res.get("ok", False)})
 
     # 超时清理：若本次请求以超时失败，尝试安全删除本次使用的会话目录
     purged_on_timeout = False
@@ -611,10 +564,10 @@ async def ask_json(request: Request):
         "output": res.get("output", ""),
         "events": res.get("events", []),
         "error": res.get("error", ""),
-        "retried_with_tools": retried_with_tools,
-        "fell_back_offline": fell_back_offline,
+        "retried_with_tools": False,
+        "fell_back_offline": False,
         "attempts": attempts,
-        "retry_wait_seconds": TOOL_RETRY_WAIT,
+        "retry_wait_seconds": 0,
         "purged_on_timeout": purged_on_timeout,
         "purge_reason": purge_reason,
     }
