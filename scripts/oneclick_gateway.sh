@@ -7,32 +7,37 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-echo "[1/6] Ensure session root and permissions"
+echo "[1/7] Disable legacy service if exists (aiops-qproxy.service)"
+sudo systemctl disable --now aiops-qproxy.service 2>/dev/null || true
+
+echo "[2/7] Ensure session root and permissions"
 mkdir -p q-sessions logs
 sudo chown -R ubuntu:ubuntu q-sessions logs || true
 
-echo "[2/6] Ensure Python venv and deps"
+echo "[3/7] Ensure Python venv and deps"
 if [ ! -d .venv ]; then
   python3 -m venv .venv
 fi
 source .venv/bin/activate
-pip install -U --disable-pip-version-check fastapi uvicorn[standard] websockets >/dev/null
+pip install -U --disable-pip-version-check fastapi uvicorn[standard] websockets stransi >/dev/null
 
-echo "[3/6] Install/Reload systemd unit"
+echo "[4/7] Install/Reload systemd unit"
 sudo cp gateway/q-gateway.service /etc/systemd/system/
+# Rewrite hard-coded repo path in unit to current PROJECT_DIR
+sudo sed -i "s|/home/ubuntu/huixin/aiops_v2|${PROJECT_DIR}|g" /etc/systemd/system/q-gateway.service
 sudo systemctl daemon-reload
 
-echo "[4/6] Restart service (CLEAR_SESSIONS=${CLEAR_SESSIONS:-0})"
+echo "[5/7] Restart service (CLEAR_SESSIONS=${CLEAR_SESSIONS:-0})"
 if [ "${CLEAR_SESSIONS:-0}" = "1" ]; then
   sudo CLEAR_SESSIONS=1 systemctl restart q-gateway
 else
   sudo systemctl restart q-gateway
 fi
 
-echo "[5/6] Show brief status"
+echo "[6/7] Show brief status"
 sudo systemctl status q-gateway --no-pager | sed -n '1,12p' || true
 
-echo "[6/6] Health check"
+echo "[7/7] Health check"
 for i in {1..20}; do
   if curl -sf http://127.0.0.1:8081/healthz >/dev/null; then
     echo "✅ Health OK"
