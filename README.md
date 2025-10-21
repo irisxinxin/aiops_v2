@@ -17,22 +17,45 @@ Q Gateway 是一个基于 FastAPI 的服务，用于处理告警分析请求并�
 
 ## 快速开始
 
-### 启动服务
+### 部署与重启（唯一入口：oneclick）
 ```bash
-# 手动启动
-./gateway/start.sh
+# 可选：覆盖关键参数（也可直接跳过使用默认值）
+export INIT_READY_TIMEOUT=12
+export WARMUP_SLEEP=20
+export Q_OVERALL_TIMEOUT=45
+export QTTY_HOST=127.0.0.1
+export QTTY_PORT=7682
+export HTTP_HOST=0.0.0.0
+export HTTP_PORT=8081
 
-# 或安装为系统服务
-./install_gateway_service.sh
+# 一键部署/重启（唯一入口）
+bash scripts/oneclick_gateway.sh
+
+# 查看服务状态
+sudo systemctl status q-gateway --no-pager
+
+# 查看服务日志
+sudo journalctl -u q-gateway -f
 ```
 
-### 停止服务
-```bash
-# 手动停止
-./gateway/stop.sh
+> 说明：不再推荐直接调用 `gateway/start.sh`/`stop.sh` 或其它旧脚本；请统一使用 `scripts/oneclick_gateway.sh` 管理服务生命周期。
 
-# 或通过系统服务
-sudo systemctl stop q-gateway
+### 测试与日志
+
+```bash
+# 健康检查
+curl -sf http://127.0.0.1:8081/healthz && echo OK || echo FAIL
+
+# 示例请求（alert 路径，最小字段集）
+curl -s -X POST http://127.0.0.1:8081/ask_json \
+  -H 'Content-Type: application/json' \
+  -d '{"alert":{"service":"sdn5","category":"network","severity":"critical","region":"aps1","title":"sdn5 container CPU usage is too high","metadata":{"group_id":"sdn5_critical"}}}' | jq .
+
+# 查看 systemd 服务日志
+sudo journalctl -u q-gateway -f
+
+# 查看 q 会话日志
+ls -lh logs/q_*.out | tail -n 5
 ```
 
 ### 测试服务

@@ -30,7 +30,12 @@ fi
 source .venv/bin/activate
 pip install -U --disable-pip-version-check fastapi uvicorn[standard] websockets stransi >/dev/null
 
-echo "[4/7] Install/Reload systemd unit"
+echo "[4/7] Prekill lingering processes (uvicorn/ttyd)"
+# 防御性清理：清掉可能遗留的 uvicorn/ttyd 进程，避免端口占用/多实例
+pkill -f "uvicorn.*gateway.app:app" 2>/dev/null || true
+pkill -f "ttyd.*q_entry.sh" 2>/dev/null || true
+
+echo "[5/7] Install/Reload systemd unit"
 sudo cp gateway/q-gateway.service /etc/systemd/system/
 # Rewrite hard-coded repo path in unit to current PROJECT_DIR
 sudo sed -i "s|/home/ubuntu/huixin/aiops_v2|${PROJECT_DIR}|g" /etc/systemd/system/q-gateway.service
@@ -48,17 +53,16 @@ Environment=HTTP_PORT=${HTTP_PORT}
 EOF
 sudo systemctl daemon-reload
 
-echo "[5/7] Restart service (CLEAR_SESSIONS=${CLEAR_SESSIONS:-0})"
+echo "[6/7] Restart service (CLEAR_SESSIONS=${CLEAR_SESSIONS:-0})"
 if [ "${CLEAR_SESSIONS:-0}" = "1" ]; then
   sudo CLEAR_SESSIONS=1 systemctl restart q-gateway
 else
   sudo systemctl restart q-gateway
 fi
 
-echo "[6/7] Show brief status"
+echo "[7/7] Show brief status"
 sudo systemctl status q-gateway --no-pager | sed -n '1,12p' || true
-
-echo "[7/7] Health check"
+echo "Health check"
 for i in {1..20}; do
   if curl -sf http://127.0.0.1:8081/healthz >/dev/null; then
     echo "✅ Health OK"
