@@ -41,6 +41,6 @@ mkdir -p "$LOG_DIR"
 Q_ENTRY_LOG_FILE="$LOG_DIR/q_entry.log"
 echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$Q_ENTRY_LOG_FILE"
 
-# 启动会话（无交互、工具信任、自动续会话）
-exec "$Q_CMD" chat --no-interactive --trust-all-tools --resume
+# 启动会话（交互模式、工具信任、自动续会话）
+exec "$Q_CMD" chat --trust-all-tools --resume
 
