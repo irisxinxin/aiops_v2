@@ -13,6 +13,7 @@ WARMUP_SLEEP="${WARMUP_SLEEP:-15}"
 Q_OVERALL_TIMEOUT="${Q_OVERALL_TIMEOUT:-300}"
 INIT_WAIT="${INIT_WAIT:-10}"
 PURGE_ON_TIMEOUT="${PURGE_ON_TIMEOUT:-0}"
+DEBUG_STREAM="${DEBUG_STREAM:-1}"
 QTTY_HOST="${QTTY_HOST:-127.0.0.1}"
 QTTY_PORT="${QTTY_PORT:-7682}"
 HTTP_HOST="${HTTP_HOST:-0.0.0.0}"
@@ -50,12 +51,16 @@ Environment=WARMUP_SLEEP=${WARMUP_SLEEP}
 Environment=Q_OVERALL_TIMEOUT=${Q_OVERALL_TIMEOUT}
 Environment=INIT_WAIT=${INIT_WAIT}
 Environment=PURGE_ON_TIMEOUT=${PURGE_ON_TIMEOUT}
+Environment=DEBUG_STREAM=${DEBUG_STREAM}
 Environment=QTTY_HOST=${QTTY_HOST}
 Environment=QTTY_PORT=${QTTY_PORT}
 Environment=HTTP_HOST=${HTTP_HOST}
 Environment=HTTP_PORT=${HTTP_PORT}
 EOF
 sudo systemctl daemon-reload
+
+# 兼容：同时在 manager 环境里设置（便于即时生效与排障跟随）
+sudo systemctl set-environment DEBUG_STREAM=${DEBUG_STREAM}
 
 echo "[6/7] Restart service (CLEAR_SESSIONS=${CLEAR_SESSIONS:-0})"
 if [ "${CLEAR_SESSIONS:-0}" = "1" ]; then
