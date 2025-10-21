@@ -534,6 +534,7 @@ def healthz():
 
 @app.post("/ask_json")
 async def ask_json(request: Request):
+    req_start = time.time()
     try:
         body = await request.json()
     except Exception:
@@ -572,6 +573,7 @@ async def ask_json(request: Request):
         ok_del, why = _purge_session_dir(SESSION_ROOT / sop_used)
         purged_on_timeout, purge_reason = ok_del, why
 
+    total_ms = int((time.time() - req_start) * 1000)
     out = {
         "ok": res["ok"],
         "sop_id": sop_id,
@@ -585,7 +587,12 @@ async def ask_json(request: Request):
         "retry_wait_seconds": 0,
         "purged_on_timeout": purged_on_timeout,
         "purge_reason": purge_reason,
+        "total_ms": total_ms,
     }
+    try:
+        print(f"[ask_json] done sop={sop_id} ok={out['ok']} total_ms={total_ms} attempts_ms={[a.get('took_ms') for a in attempts]}")
+    except Exception:
+        pass
     return JSONResponse(out, status_code=200 if out["ok"] else 504)
 
 
@@ -606,6 +613,7 @@ async def call_stream(request: Request):
     async def _gen():
         pool = _get_pool(sop_id)
         pc: _PooledClient
+        _start_ts = time.time()
         try:
             pc, _ = await pool.acquire()
 
@@ -630,6 +638,11 @@ async def call_stream(request: Request):
         finally:
             try:
                 await pool.release(pc)
+            except Exception:
+                pass
+            try:
+                elapsed_ms = int((time.time() - _start_ts) * 1000)
+                print(f"[call_stream] done sop={sop_id} elapsed_ms={elapsed_ms}")
             except Exception:
                 pass
 
