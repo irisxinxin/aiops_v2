@@ -422,8 +422,9 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             import hashlib as _hl
             _sha1 = _hl.sha1(prompt.encode('utf-8', 'ignore')).hexdigest()
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))} sha1={_sha1}")
-            # 使用 execute_command_stream 以稳定的统一数据流（不设置 silence_timeout，避免初始化期被误杀）
-            async for chunk in pc.client.execute_command_stream(prompt):
+            # 使用 execute_command_stream 以稳定的统一数据流；
+            # 显式将静默超时设为总体超时，避免默认 5s 触发断连
+            async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
                 t = str(chunk.get("type", "")).lower()
                 if t == "content":
                     out_chunks.append(chunk.get("content", ""))
