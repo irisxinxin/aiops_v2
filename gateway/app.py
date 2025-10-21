@@ -254,22 +254,23 @@ async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict
         slash_cmd += " -f"
     
     try:
-        async with TerminalAPIClient(host="127.0.0.1", port=7682, terminal_type=TerminalType.QCLI,
-                                   url_query={"arg": sop_id}) as c:
-            await c.send_text(f"{slash_cmd}\n")
-            # Wait a bit for command to execute
-            import asyncio
-            await asyncio.sleep(1)
-            
+        async with TerminalAPIClient(
+            host=HOST,
+            port=PORT,
+            terminal_type=TerminalType.QCLI,
+            url_query={"arg": sop_id}
+        ) as c:
             response_data = ""
             try:
-                async for ev in c.stream():
-                    if ev.get("type") in ("content", "notification", "tool"):
-                        response_data = str(ev.get("data", ""))
+                async for ev in c.execute_command_stream(slash_cmd, silence_timeout=float(timeout)):
+                    ev_type = str(ev.get("type", "")).lower()
+                    if ev_type == "content" and not response_data:
+                        response_data = str(ev.get("content", ""))
+                    if ev_type in ("complete", "error"):
                         break
-            except:
-                pass  # Ignore stream errors
-            
+            except Exception:
+                pass  # Ignore stream errors, rely on best-effort collection
+
             return {"ok": True, "code": 0, "stdout": response_data, "stderr": ""}
     except Exception as e:
         return {"ok": False, "code": 1, "stdout": "", "stderr": str(e)}
@@ -440,10 +441,11 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")
             # 使用 execute_command_stream 以稳定的统一数据流
             async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
-                t = chunk.get("type")
+                t = str(chunk.get("type", "")).lower()
                 if t == "content":
                     out_chunks.append(chunk.get("content", ""))
-                elif t in ("notification", "tool", "error"):
+                elif t in ("thinking", "tool_use", "pending", "error", "notification", "tool"):
+                    # 兼容老事件名(notification/tool)，并捕获统一数据流事件
                     events.append(chunk)
                 elif t == "complete":
                     print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
