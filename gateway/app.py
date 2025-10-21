@@ -27,6 +27,7 @@ ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","Fal
 
 Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
 PURGE_ON_TIMEOUT = os.getenv("PURGE_ON_TIMEOUT", "0") not in ("0", "false", "False")
+PRE_SLASH_CMD = os.getenv("PRE_SLASH_CMD", "/tangent")
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
@@ -415,6 +416,13 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
                 raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")
             # 使用 execute_command_stream 以稳定的统一数据流
+            # 预先发送一次会话隔离指令，避免旧会话回放干扰（可通过 PRE_SLASH_CMD 关闭或替换）
+            if PRE_SLASH_CMD and PRE_SLASH_CMD.strip().startswith('/'):
+                try:
+                    async for _ in pc.client.execute_command_stream(PRE_SLASH_CMD.strip(), silence_timeout=5.0):
+                        pass
+                except Exception:
+                    pass
             async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
                 t = str(chunk.get("type", "")).lower()
                 if t == "content":

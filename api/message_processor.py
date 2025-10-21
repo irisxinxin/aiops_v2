@@ -168,8 +168,25 @@ class MessageProcessor:
         
         # 2. 根据类型决定返回的内容
         if chunk_type == ChunkType.CONTENT:
-            # 移除命令回显，避免回显触发循环输出
-            content = self._remove_command_echo(clean_content, command.strip(), 'qcli') if command else clean_content
+            # 移除命令回显（包含多段/换行回显）
+            if command and command.strip():
+                cmd = command.strip()
+                # 若包含 TASK/SOP 标记，按段落切分，丢弃与首段相同的重复回显
+                parts = [p for p in clean_content.split('\n') if p.strip()]
+                if parts and parts[0].startswith('## TASK INSTRUCTIONS'):
+                    # 丢弃前若干行与 cmd 开头一致的重复段
+                    pruned = []
+                    drop = True
+                    for line in parts:
+                        if drop and line in cmd:
+                            continue
+                        drop = False
+                        pruned.append(line)
+                    content = '\n'.join(pruned)
+                else:
+                    content = self._remove_command_echo(clean_content, cmd, 'qcli')
+            else:
+                content = clean_content
         elif chunk_type in [ChunkType.THINKING, ChunkType.TOOL_USE, ChunkType.COMPLETE]:
             # 状态类型：不返回内容给用户，但保留类型信息
             content = ""
