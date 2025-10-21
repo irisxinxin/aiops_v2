@@ -532,6 +532,7 @@ def _resolve_sop_id(body: Dict[str, Any]) -> str:
 def healthz():
     return {"ok": True, "service": APP_NAME}
 
+@app.post("/ask")
 @app.post("/ask_json")
 async def ask_json(request: Request):
     req_start = time.time()
