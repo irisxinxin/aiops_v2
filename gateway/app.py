@@ -33,6 +33,7 @@ STREAM_OVERALL_TIMEOUT = int(os.getenv("STREAM_OVERALL_TIMEOUT", "300"))
 STREAM_SILENCE_TIMEOUT = int(os.getenv("STREAM_SILENCE_TIMEOUT", "180"))
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
+DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0") not in ("0","false","False")
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
 
 # 工具软等与离线兜底策略
@@ -348,6 +349,9 @@ class _QPool:
             # 连接保持常驻
 
 
+CTRL_C = b"\x03"
+ENTER  = b"\r"
+
 async def _evict_one_idle() -> bool:
     """在所有 sop 池中淘汰一个空闲连接（LRU），释放全局额度。"""
     global _GLOBAL_CONN
@@ -395,6 +399,35 @@ def _get_pool(sop_id: str) -> _QPool:
         _SOP_POOLS[sop_id] = _QPool(sop_id, size=3)
     return _SOP_POOLS[sop_id]
 
+async def _send_stdin_any(client, data: bytes) -> None:
+    cm = getattr(client, "_connection_manager", None)
+    if cm and hasattr(cm, "send_stdin") and callable(cm.send_stdin):
+        await cm.send_stdin(data)
+        return
+    if cm and hasattr(cm, "send_input") and callable(cm.send_input):
+        await cm.send_input(data.decode("utf-8", "ignore"))
+        return
+    if hasattr(client, "send_text") and callable(client.send_text):
+        try:
+            await client.send_text(data.decode("utf-8", "ignore"))
+            return
+        except Exception:
+            pass
+    try:
+        s = data.decode("utf-8", "ignore")
+        async for _ in client.execute_command_stream(s):
+            break
+    except Exception:
+        pass
+
+async def _kick_q_ready(client) -> None:
+    try:
+        await _send_stdin_any(client, CTRL_C)
+        await asyncio.sleep(0.05)
+        await _send_stdin_any(client, ENTER)
+    except Exception:
+        pass
+
 async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[str, Any]:
     if timeout is None:
         timeout = Q_OVERALL_TIMEOUT
@@ -410,8 +443,11 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
     should_reset_client = False
     try:
         pc, _ = await pool.acquire()
+        # 进入可聊天态
+        await _kick_q_ready(pc.client)
 
         async def _inner():
+            dbg_count = 0
             nonlocal stream_error_detected, stream_error_message
             # 直接发送原始文本，并在尾部追加回车提交（交互模式需要 \r）
             prompt = (text or "")
@@ -429,25 +465,63 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             except Exception:
                 pass
 
-            # 使用 execute_command_stream 以稳定的统一数据流；
-            # 显式将静默超时设为总体超时，避免默认 5s 触发断连
-            async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
-                t = str(chunk.get("type", "")).lower()
-                if t == "content":
-                    out_chunks.append(chunk.get("content", ""))
-                elif t in ("thinking", "tool_use", "pending", "error", "notification", "tool"):
-                    # 兼容老事件名(notification/tool)，并捕获统一数据流事件
-                    events.append(chunk)
-                    if not stream_error_detected and t == "error":
-                        stream_error_detected = True
-                        # 尝试提取统一数据结构中的错误信息
-                        meta = chunk.get("metadata", {}) if isinstance(chunk, dict) else {}
-                        stream_error_message = (
-                            meta.get("error_message") or meta.get("message") or chunk.get("content", "") or "stream error"
-                        )
-                elif t == "complete":
-                    print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
-                    break
+            # 提交兜底 nanny：补发 ENTER 防止未提交
+            prompt_to_send = prompt.rstrip("\r\n") + "\r"
+            async def _enter_nanny():
+                try:
+                    await asyncio.sleep(0.30); await _send_stdin_any(pc.client, ENTER)
+                    await asyncio.sleep(0.70); await _send_stdin_any(pc.client, ENTER)
+                except Exception:
+                    pass
+            nanny_task = asyncio.create_task(_enter_nanny())
+
+            try:
+                async for chunk in pc.client.execute_command_stream(prompt_to_send, silence_timeout=float(timeout)):
+                    if DEBUG_STREAM:
+                        dbg_count += 1
+                        if dbg_count % 50 == 1:
+                            try:
+                                if isinstance(chunk, dict):
+                                    tdbg = chunk.get("type", "")
+                                    sdbg = (chunk.get("content") or chunk.get("text") or chunk.get("data") or "")
+                                    print(f"[*stream*] got dict {tdbg} {len(str(sdbg))}B: {str(sdbg)[:120]!r}")
+                                else:
+                                    s = str(chunk)
+                                    print(f"[*stream*] got str {len(s)}B: {s[:120]!r}")
+                            except Exception:
+                                pass
+
+                    if isinstance(chunk, str):
+                        out_chunks.append(chunk)
+                        continue
+                    if isinstance(chunk, dict):
+                        t = str(chunk.get("type", "")).lower()
+                        if t in ("content", "text", "delta", "stdout"):
+                            s = (chunk.get("content") or chunk.get("text") or chunk.get("data") or "")
+                            if s:
+                                out_chunks.append(s)
+                        elif t in ("thinking", "tool_use", "pending", "notification", "tool", "meta"):
+                            events.append(chunk)
+                        elif t == "error":
+                            events.append(chunk)
+                            if not stream_error_detected:
+                                stream_error_detected = True
+                                meta = chunk.get("metadata", {}) if isinstance(chunk, dict) else {}
+                                stream_error_message = (
+                                    meta.get("error_message") or meta.get("message") or chunk.get("content", "") or "stream error"
+                                )
+                        elif t == "complete":
+                            print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
+                            break
+                        else:
+                            events.append(chunk)
+                    else:
+                        try:
+                            out_chunks.append(str(chunk))
+                        except Exception:
+                            pass
+            finally:
+                nanny_task.cancel()
 
         await asyncio.wait_for(_inner(), timeout=timeout)
         ok = True
