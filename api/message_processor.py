@@ -140,9 +140,6 @@ class MessageProcessor:
         if command in content:
             content = content.replace(command, "", 1)
             logger.debug(f"移除命令回显: {command}")
-        
-        if terminal_type == 'qcli':
-            return command
 
         # 清理可能的多余空白
         lines = content.split('\n')
