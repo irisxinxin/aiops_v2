@@ -402,10 +402,12 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
 
     pool = _get_pool(sop_id)
     pc: _PooledClient
+    should_reset_client = False
     try:
         pc, _ = await pool.acquire()
 
         async def _inner():
+            nonlocal stream_error_detected, stream_error_message
             # 直接发送原始文本，换行由底层 QCLI 适配（\r）
             prompt = (text or "")
             if not prompt.strip():
@@ -437,10 +439,12 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         ok = False
         err = f"timeout after {timeout}s"
         print(f"[collect] timeout sop={sop_id} err={err}")
+        should_reset_client = True
     except Exception as e:
         ok = False
         err = str(e)
         print(f"[collect] error sop={sop_id} err={e}")
+        should_reset_client = True
     finally:
         # 释放连接
         try:
@@ -448,6 +452,23 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             print(f"[pool] release sop={sop_id}")
         except Exception:
             pass
+        # 若需要，主动关闭并移除损坏连接，避免下次复用坏状态
+        if should_reset_client:
+            try:
+                await pc.client.shutdown()
+            except Exception:
+                pass
+            try:
+                if pool._clients and pool._clients[0] is pc:
+                    pool._clients.pop(0)
+            except Exception:
+                pass
+            try:
+                async with _GLOBAL_LOCK:
+                    if _GLOBAL_CONN > 0:
+                        _GLOBAL_CONN -= 1
+            except Exception:
+                pass
 
     # 若流中检测到 error 事件，则将最终结果标记为失败，并填充错误信息
     if stream_error_detected:
