@@ -38,6 +38,27 @@ echo "[4/7] Prekill lingering processes (uvicorn/ttyd)"
 pkill -f "uvicorn.*gateway.app:app" 2>/dev/null || true
 pkill -f "ttyd.*q_entry.sh" 2>/dev/null || true
 
+echo "[4.1/7] Prekill stray 'q chat' processes (ensure only our sessions run)"
+# 清理所有遗留的 q chat/qchat 实例，避免多个 Q 同时运行造成干扰
+# 如需更保守策略，可限定 CWD 在本项目的 q-sessions 下
+if command -v pgrep >/dev/null 2>&1; then
+  # TERM -> 短等 -> KILL（仅对仍然存活的进程）
+  PIDS=$(pgrep -f -d ' ' -f "(q chat|qchat)" || true)
+  if [ -n "$PIDS" ]; then
+    echo "Found q chat PIDs: $PIDS (terminating)"
+    kill $PIDS 2>/dev/null || true
+    sleep 1
+    for pid in $PIDS; do
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
+else
+  pkill -f "q chat" 2>/dev/null || true
+  pkill -f "qchat" 2>/dev/null || true
+fi
+
 echo "[5/7] Install/Reload systemd unit"
 sudo cp gateway/q-gateway.service /etc/systemd/system/
 # Rewrite hard-coded repo path in unit to current PROJECT_DIR
