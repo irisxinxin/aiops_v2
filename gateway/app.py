@@ -26,6 +26,7 @@ TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))
 ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","False")
 
 Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
+PURGE_ON_TIMEOUT = os.getenv("PURGE_ON_TIMEOUT", "0") not in ("0", "false", "False")
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
@@ -561,7 +562,7 @@ async def ask_json(request: Request):
     # 超时清理：若本次请求以超时失败，尝试安全删除本次使用的会话目录
     purged_on_timeout = False
     purge_reason = ""
-    if (not res.get("ok")) and ("timeout" in (res.get("error", "").lower())):
+    if PURGE_ON_TIMEOUT and (not res.get("ok")) and ("timeout" in (res.get("error", "").lower())):
         ok_del, why = _purge_session_dir(SESSION_ROOT / sop_used)
         purged_on_timeout, purge_reason = ok_del, why
 
