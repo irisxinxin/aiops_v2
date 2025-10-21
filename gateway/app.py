@@ -25,7 +25,8 @@ TASK_DOC_PATH = Path(os.getenv("TASK_DOC_PATH", "./task_instructions.md"))
 TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))
 ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","False")
 
-Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
+# 总体超时：默认 300s（避免 MCP 首次加载被 30s 误杀）
+Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "300"))
 PURGE_ON_TIMEOUT = os.getenv("PURGE_ON_TIMEOUT", "0") not in ("0", "false", "False")
 PRE_SLASH_CMD = os.getenv("PRE_SLASH_CMD", "")  # 空为默认：不额外发送，保证“一条调用只发一次”
 STREAM_OVERALL_TIMEOUT = int(os.getenv("STREAM_OVERALL_TIMEOUT", "300"))
@@ -455,8 +456,7 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
     finally:
         # 释放连接
         try:
-            await pool.release(pc)
-            print(f"[pool] release sop={sop_id}")
+            await pool.release(pc)  # 内部已有 release 打印，这里不重复
         except Exception:
             pass
         # 若需要，主动关闭并移除损坏连接，避免下次复用坏状态
