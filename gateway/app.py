@@ -413,16 +413,17 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
 
         async def _inner():
             nonlocal stream_error_detected, stream_error_message
-            # 直接发送原始文本，换行由底层 QCLI 适配（\r）
+            # 直接发送原始文本，并在尾部追加回车提交（交互模式需要 \r）
             prompt = (text or "")
+            prompt = prompt.rstrip("\r\n") + "\r"
             if not prompt.strip():
                 raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
             # 打印长度与 sha1 以确认是否重复构造
             import hashlib as _hl
             _sha1 = _hl.sha1(prompt.encode('utf-8', 'ignore')).hexdigest()
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))} sha1={_sha1}")
-            # 使用 execute_command_stream 以稳定的统一数据流
-            async for chunk in pc.client.execute_command_stream(prompt, silence_timeout=float(timeout)):
+            # 使用 execute_command_stream 以稳定的统一数据流（不设置 silence_timeout，避免初始化期被误杀）
+            async for chunk in pc.client.execute_command_stream(prompt):
                 t = str(chunk.get("type", "")).lower()
                 if t == "content":
                     out_chunks.append(chunk.get("content", ""))
