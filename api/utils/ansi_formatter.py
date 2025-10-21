@@ -177,8 +177,8 @@ class AnsiFormatter:
             ChunkType: 消息类型
         """
         # Q CLI完成检测：基于稳定的文本特征
-        if '!>' in clean_text and clean_text.endswith('\r'):
-            logger.info("检测到Q CLI完成信号：'!>' 模式 + 结尾\\r")
+        if '!>' in clean_text:
+            logger.info("检测到Q CLI完成信号：包含 '!>' 标志")
             return ChunkType.COMPLETE
         
         # 检测思考状态

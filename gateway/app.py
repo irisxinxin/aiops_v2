@@ -406,8 +406,8 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         pc, _ = await pool.acquire()
 
         async def _inner():
-            # 确保有换行并发送
-            prompt = (text or "").rstrip("\n") + "\n"
+            # 直接发送原始文本，换行由底层 QCLI 适配（\r）
+            prompt = (text or "")
             if not prompt.strip():
                 raise HTTPException(400, f"empty prompt for sop_id={sop_id}")
             print(f"[ask_json] send sop={sop_id} bytes={len(prompt.encode('utf-8'))}")

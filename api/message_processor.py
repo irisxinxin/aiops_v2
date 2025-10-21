@@ -171,9 +171,8 @@ class MessageProcessor:
         
         # 2. 根据类型决定返回的内容
         if chunk_type == ChunkType.CONTENT:
-            # 内容类型：移除命令回显后返回清理后的内容
-            # clean_content = self._remove_command_echo(clean_content, command.strip(), 'qcli')
-            content = clean_content
+            # 移除命令回显，避免回显触发循环输出
+            content = self._remove_command_echo(clean_content, command.strip(), 'qcli') if command else clean_content
         elif chunk_type in [ChunkType.THINKING, ChunkType.TOOL_USE, ChunkType.COMPLETE]:
             # 状态类型：不返回内容给用户，但保留类型信息
             content = ""
