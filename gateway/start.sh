@@ -31,4 +31,6 @@ ttyd --interface "${QTTY_HOST:-127.0.0.1}" \
 
 sleep "${WARMUP_SLEEP:-15}" || true
 echo "Starting Gateway API service..."
+# 放宽终端初始化就绪等待时间到 10s（可通过外部环境覆盖）
+export INIT_READY_TIMEOUT="${INIT_READY_TIMEOUT:-10}"
 exec uvicorn gateway.app:app --host "${HTTP_HOST:-0.0.0.0}" --port "${HTTP_PORT:-8081}" --log-level info
