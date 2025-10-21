@@ -552,6 +552,11 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
                                     meta.get("error_message") or meta.get("message") or chunk.get("content", "") or "stream error"
                                 )
                         elif t == "complete":
+                            # 若尚未收到首个“非回显”内容，忽略这次 complete（多见于 Q 回显 '!>' 提示引发的误判）
+                            if not first_meaningful_seen:
+                                if DEBUG_STREAM:
+                                    print("[echo-drop] ignore early complete before content")
+                                continue
                             print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
                             break
                         else:
@@ -607,7 +612,14 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         if not err:
             err = stream_error_message
 
-    return {"ok": ok, "output": "".join(out_chunks), "events": events, "error": err}
+    output_text = "".join(out_chunks)
+    # 清理残余的 TASK/SOP/ALERT 标头行（防御性处理）
+    try:
+        lines = [ln for ln in output_text.splitlines() if ln.strip() and not ln.strip().lower().startswith(("## task", "## sop", "## alert"))]
+        output_text = "\n".join(lines)
+    except Exception:
+        pass
+    return {"ok": ok, "output": output_text, "events": events, "error": err}
 
 def _improve_json_readability(json_str: str) -> str:
     """Improve readability of JSON text by adding spaces"""
