@@ -124,6 +124,13 @@ def _build_prompt(body: Dict[str, Any], sop_id: str, allow_tools: bool = True, b
     if sop_text:
         parts.append(f"## SOP ({sop_id})\n" + sop_text)
 
+    # 明确回显约束，避免模型复述提示词/ALERT 内容
+    parts.append("""## RESPONSE POLICY
+- Do NOT repeat, quote, or paraphrase TASK/SOP/ALERT or any headings.
+- Do NOT output lines starting with '## TASK', '## SOP', '## ALERT', or '!>'.
+- Produce only new content required by the task.
+""")
+
     if not allow_tools:
         parts.append("""## TOOL POLICY
 - Do NOT call any tools or MCP servers in this turn.
@@ -619,6 +626,11 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         output_text = "\n".join(lines)
     except Exception:
         pass
+    # 若仅回显（无有效输出），将本次标记为失败并返回说明
+    if not output_text.strip() and not stream_error_detected:
+        ok = False
+        err = err or "no model content (prompt echo filtered)"
+
     return {"ok": ok, "output": output_text, "events": events, "error": err}
 
 def _improve_json_readability(json_str: str) -> str:
