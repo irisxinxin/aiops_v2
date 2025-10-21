@@ -41,14 +41,6 @@ mkdir -p "$LOG_DIR"
 Q_ENTRY_LOG_FILE="$LOG_DIR/q_entry.log"
 echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$Q_ENTRY_LOG_FILE"
 
-# 原始 TTY 落盘开关（默认关闭）；仅在需要时用于排障
-Q_RAW_TTY_LOG=${Q_RAW_TTY_LOG:-0}
-RAW_OUT_FILE="$LOG_DIR/q_${SOP_ID}.out"
-
-# 启动会话（工具信任，自动续会话）
-if [ "$Q_RAW_TTY_LOG" = "1" ]; then
-  exec "$Q_CMD" chat --trust-all-tools --resume >>"$RAW_OUT_FILE" 2>&1
-else
-  exec "$Q_CMD" chat --trust-all-tools --resume >/dev/null 2>&1
-fi
+# 启动会话（工具信任，自动续会话）- 永久不落原始 TTY 到磁盘
+exec "$Q_CMD" chat --trust-all-tools --resume >/dev/null 2>&1
 
