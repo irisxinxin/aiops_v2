@@ -143,6 +143,35 @@ runbook_steps[], commands[], next_action""")
 
     return "\n\n".join(parts).strip()
 
+# 简单回显判定：丢弃明显与 Prompt 回显的片段（避免把大 Prompt 当输出返回）
+def _looks_like_prompt_echo(content: str, prompt: str) -> bool:
+    try:
+        if not content:
+            return False
+        c = (content or "").strip()
+        if not c:
+            return False
+        # 典型前缀：TASK / SOP / ALERT / !>
+        head = c[:64].lower()
+        if head.startswith("## task") or head.startswith("## sop") or head.startswith("## alert") or head.startswith("!>"):  # noqa: E501
+            return True
+        # 子串高度重合（短片段且完全出现在 prompt 中）
+        p = (prompt or "").lower()
+        cc = c.lower()
+        if len(cc) <= 256 and cc in p:
+            return True
+        # 基于 token 粗匹配的相似度
+        import re
+        words_c = set(re.findall(r"[a-z0-9_\-]+", cc))
+        words_p = set(re.findall(r"[a-z0-9_\-]+", p))
+        if words_c:
+            inter = len(words_c & words_p)
+            if inter / max(1, len(words_c)) >= 0.7 and len(cc) <= 1024:
+                return True
+        return False
+    except Exception:
+        return False
+
 def _log_prompt(sop_id: str, prompt: str) -> None:
     try:
         proj_dir = Path(__file__).resolve().parents[1]
@@ -476,6 +505,7 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             nanny_task = asyncio.create_task(_enter_nanny())
 
             try:
+                first_meaningful_seen = False
                 async for chunk in pc.client.execute_command_stream(prompt_to_send, silence_timeout=float(timeout)):
                     if DEBUG_STREAM:
                         dbg_count += 1
@@ -492,13 +522,24 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
                                 pass
 
                     if isinstance(chunk, str):
-                        out_chunks.append(chunk)
+                        s = chunk
+                        if not first_meaningful_seen and _looks_like_prompt_echo(s, prompt):
+                            if DEBUG_STREAM:
+                                print(f"[echo-drop] str {len(s)}B")
+                            continue
+                        first_meaningful_seen = True
+                        out_chunks.append(s)
                         continue
                     if isinstance(chunk, dict):
                         t = str(chunk.get("type", "")).lower()
                         if t in ("content", "text", "delta", "stdout"):
                             s = (chunk.get("content") or chunk.get("text") or chunk.get("data") or "")
                             if s:
+                                if not first_meaningful_seen and _looks_like_prompt_echo(s, prompt):
+                                    if DEBUG_STREAM:
+                                        print(f"[echo-drop] dict {t} {len(s)}B")
+                                    continue
+                                first_meaningful_seen = True
                                 out_chunks.append(s)
                         elif t in ("thinking", "tool_use", "pending", "notification", "tool", "meta"):
                             events.append(chunk)
