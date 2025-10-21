@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # terminal-api-for-qcli client
 sys.path.append("/opt/terminal-api-for-qcli")
@@ -28,6 +28,8 @@ ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","Fal
 Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
 PURGE_ON_TIMEOUT = os.getenv("PURGE_ON_TIMEOUT", "0") not in ("0", "false", "False")
 PRE_SLASH_CMD = os.getenv("PRE_SLASH_CMD", "")  # 空为默认：不额外发送，保证“一条调用只发一次”
+STREAM_OVERALL_TIMEOUT = int(os.getenv("STREAM_OVERALL_TIMEOUT", "300"))
+STREAM_SILENCE_TIMEOUT = int(os.getenv("STREAM_SILENCE_TIMEOUT", "180"))
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
@@ -586,4 +588,50 @@ async def ask_json(request: Request):
     }
     return JSONResponse(out, status_code=200 if out["ok"] else 504)
 
+
+# 流式接口：边收边回，避免链路读超时
+@app.post("/call_stream")
+async def call_stream(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "expect JSON body")
+
+    sop_id = _resolve_sop_id(body)
+    (SESSION_ROOT / sop_id).mkdir(parents=True, exist_ok=True)
+
+    prompt = _build_prompt(body, sop_id, allow_tools=True)
+    _log_prompt(sop_id, prompt)
+
+    async def _gen():
+        pool = _get_pool(sop_id)
+        pc: _PooledClient
+        try:
+            pc, _ = await pool.acquire()
+
+            # 发送并消费结构化流；收到 complete 退出
+            first_chunk_time = None
+
+            async def _inner_stream():
+                nonlocal first_chunk_time
+                async for ch in pc.client.execute_command_stream(prompt, silence_timeout=float(STREAM_OVERALL_TIMEOUT)):
+                    t = str(ch.get("type", "")).lower()
+                    now = time.time()
+                    if first_chunk_time is None:
+                        first_chunk_time = now
+                    # 输出仅透传 content；其它类型不返回正文
+                    if t == "content":
+                        yield ch.get("content", "")
+                    elif t == "complete":
+                        return
+            # 将内部 async 生成器桥接为同步 yield
+            async for piece in _inner_stream():
+                yield piece
+        finally:
+            try:
+                await pool.release(pc)
+            except Exception:
+                pass
+
+    return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
