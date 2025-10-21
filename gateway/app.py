@@ -451,7 +451,7 @@ async def _send_stdin_any(client, data: bytes) -> None:
             pass
     try:
         s = data.decode("utf-8", "ignore")
-        async for _ in client.execute_command_stream(s):
+        async for _ in client.send_message_stream(s):
             break
     except Exception:
         pass
@@ -513,7 +513,7 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
 
             try:
                 first_meaningful_seen = False
-                async for chunk in pc.client.execute_command_stream(prompt_to_send, silence_timeout=float(timeout)):
+                async for chunk in pc.client.send_message_stream(prompt_to_send, silence_timeout=float(timeout)):
                     if DEBUG_STREAM:
                         dbg_count += 1
                         if dbg_count % 50 == 1:
@@ -771,7 +771,7 @@ async def call_stream(request: Request):
 
             async def _inner_stream():
                 nonlocal first_chunk_time
-                async for ch in pc.client.execute_command_stream(prompt, silence_timeout=float(STREAM_OVERALL_TIMEOUT)):
+                async for ch in pc.client.send_message_stream(prompt, silence_timeout=float(STREAM_OVERALL_TIMEOUT)):
                     t = str(ch.get("type", "")).lower()
                     now = time.time()
                     if first_chunk_time is None:
