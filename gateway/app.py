@@ -425,6 +425,8 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
         timeout = Q_OVERALL_TIMEOUT
     out_chunks: List[str] = []
     events: List[Dict[str, Any]] = []
+    stream_error_detected = False
+    stream_error_message = ""
 
     print(f"[collect] start sop={sop_id} timeout={timeout}")
 
@@ -447,6 +449,13 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
                 elif t in ("thinking", "tool_use", "pending", "error", "notification", "tool"):
                     # 兼容老事件名(notification/tool)，并捕获统一数据流事件
                     events.append(chunk)
+                    if not stream_error_detected and t == "error":
+                        stream_error_detected = True
+                        # 尝试提取统一数据结构中的错误信息
+                        meta = chunk.get("metadata", {}) if isinstance(chunk, dict) else {}
+                        stream_error_message = (
+                            meta.get("error_message") or meta.get("message") or chunk.get("content", "") or "stream error"
+                        )
                 elif t == "complete":
                     print(f"[collect] complete sop={sop_id} chunks={len(out_chunks)} events={len(events)}")
                     break
@@ -469,6 +478,12 @@ async def _run_q_collect(sop_id: str, text: str, timeout: int = None) -> Dict[st
             print(f"[pool] release sop={sop_id}")
         except Exception:
             pass
+
+    # 若流中检测到 error 事件，则将最终结果标记为失败，并填充错误信息
+    if stream_error_detected:
+        ok = False
+        if not err:
+            err = stream_error_message
 
     return {"ok": ok, "output": "".join(out_chunks), "events": events, "error": err}
 
