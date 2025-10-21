@@ -26,7 +26,6 @@ TASK_DOC_BUDGET = int(os.getenv("TASK_DOC_BUDGET", "131072"))
 ALERT_JSON_PRETTY = os.getenv("ALERT_JSON_PRETTY", "1") not in ("0","false","False")
 
 Q_OVERALL_TIMEOUT = int(os.getenv("Q_OVERALL_TIMEOUT", "30"))
-SLASH_TIMEOUT = int(os.getenv("SLASH_TIMEOUT", "10"))
 
 MIN_OUTPUT_CHARS = int(os.getenv("MIN_OUTPUT_CHARS", "50"))
 BAD_PATTERNS = os.getenv("BAD_PATTERNS", "as an ai language model|cannot assist with").split("|")
@@ -245,35 +244,6 @@ def _append_incident_sop_mapping(incident_key: Optional[str], sop_id: str) -> No
     except Exception:
         pass
 
-async def _run_q_slash(sop_id: str, slash_cmd: str, timeout: int = None) -> Dict[str, Any]:
-    if timeout is None:
-        timeout = SLASH_TIMEOUT
-    workdir = SESSION_ROOT / sop_id
-    workdir.mkdir(parents=True, exist_ok=True)
-    if slash_cmd.startswith("/save") and " -f" not in slash_cmd and " --force" not in slash_cmd:
-        slash_cmd += " -f"
-    
-    try:
-        async with TerminalAPIClient(
-            host=HOST,
-            port=PORT,
-            terminal_type=TerminalType.QCLI,
-            url_query={"arg": sop_id}
-        ) as c:
-            response_data = ""
-            try:
-                async for ev in c.execute_command_stream(slash_cmd, silence_timeout=float(timeout)):
-                    ev_type = str(ev.get("type", "")).lower()
-                    if ev_type == "content" and not response_data:
-                        response_data = str(ev.get("content", ""))
-                    if ev_type in ("complete", "error"):
-                        break
-            except Exception:
-                pass  # Ignore stream errors, rely on best-effort collection
-
-            return {"ok": True, "code": 0, "stdout": response_data, "stderr": ""}
-    except Exception as e:
-        return {"ok": False, "code": 1, "stdout": "", "stderr": str(e)}
 
 QTTY_MAX_CONN = int(os.getenv("QTTY_MAX_CONN", "20"))
 _GLOBAL_CONN = 0
