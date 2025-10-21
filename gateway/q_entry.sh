@@ -38,8 +38,17 @@ fi
 # 会话日志目录（便于线上排障）
 LOG_DIR="$PROJECT_DIR/logs"
 mkdir -p "$LOG_DIR"
-echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$LOG_DIR/q_entry.log"
+Q_ENTRY_LOG_FILE="$LOG_DIR/q_entry.log"
+echo "[q_entry] sop_id=$SOP_ID session_dir=$SESSION_DIR q_cmd=$Q_CMD" >> "$Q_ENTRY_LOG_FILE"
 
-# 启动会话（工具信任，自动续会话）并记录日志
-exec "$Q_CMD" chat --trust-all-tools --resume >>"$LOG_DIR/q_${SOP_ID}.out" 2>&1
+# 原始 TTY 落盘开关（默认关闭）；仅在需要时用于排障
+Q_RAW_TTY_LOG=${Q_RAW_TTY_LOG:-0}
+RAW_OUT_FILE="$LOG_DIR/q_${SOP_ID}.out"
+
+# 启动会话（工具信任，自动续会话）
+if [ "$Q_RAW_TTY_LOG" = "1" ]; then
+  exec "$Q_CMD" chat --trust-all-tools --resume >>"$RAW_OUT_FILE" 2>&1
+else
+  exec "$Q_CMD" chat --trust-all-tools --resume >/dev/null 2>&1
+fi
 
